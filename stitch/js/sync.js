@@ -160,12 +160,21 @@ async function pushAllToSheet() {
   showSyncToast('Mengirim semua data ke Google Sheet...', 0);
 
   try {
+    // Prepare kategori data: convert strings to objects for GAS
+    const kategoriLocal = DB.get('kategori');
+    const kategoriForGAS = kategoriLocal.map(k => {
+      if (typeof k === 'string') {
+        return { id: 'kat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), nama: k };
+      }
+      return k; // already an object
+    });
+    
     const result = await gasRequest({
       body: {
         action: 'pushAll',
         data: {
           produk:          DB.get('products'),      // GAS key: produk
-          kategori:        DB.get('kategori'),
+          kategori:        kategoriForGAS,          // Convert to objects
           transaksi:       DB.get('transaksi'),
           pembelian:       DB.get('pembelian'),
           mutasi:          DB.get('mutasi'),
@@ -233,7 +242,16 @@ async function pullAllFromSheet() {
       kategoriBiaya:   'kategoriBiaya',
     };
     Object.entries(map).forEach(([gasKey, localKey]) => {
-      if (data[gasKey] !== undefined) DB.set(localKey, data[gasKey]);
+      if (data[gasKey] !== undefined) {
+        let value = data[gasKey];
+        
+        // Special handling for kategori: convert objects to strings
+        if (localKey === 'kategori' && Array.isArray(value)) {
+          value = value.map(k => typeof k === 'object' ? (k.nama || String(k)) : k);
+        }
+        
+        DB.set(localKey, value);
+      }
     });
     if (data.outlet) DB.setObj('outlet', data.outlet);
 

@@ -12,7 +12,13 @@ function getKategori() {
     DB.set('kategori', defaults);
     return defaults;
   }
-  return saved;
+  // Normalize: convert objects to strings if needed
+  const normalized = saved.map(k => typeof k === 'string' ? k : (k.nama || String(k)));
+  // Save normalized version if it was objects
+  if (saved.some(k => typeof k === 'object')) {
+    DB.set('kategori', normalized);
+  }
+  return normalized;
 }
 function saveKategori(list) { DB.set('kategori', list); }
 
@@ -345,14 +351,18 @@ function renderKategoriProduk() {
     container.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:20px;">Belum ada kategori</p>';
     return;
   }
-  container.innerHTML = list.map((k, i) => `
+  container.innerHTML = list.map((k, i) => {
+    // Handle both string and object format
+    const nama = typeof k === 'string' ? k : (k.nama || k);
+    return `
     <div class="list-item">
-      <span>${k}</span>
+      <span>${nama}</span>
       <div style="display:flex;gap:10px;align-items:center;">
         <i class="fa-solid fa-pen" style="color:var(--text-mid);cursor:pointer;" onclick="editKategori(${i})"></i>
         <i class="fa-solid fa-trash" style="color:var(--danger);cursor:pointer;" onclick="hapusKategori(${i})"></i>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function tambahKategori() {
@@ -371,21 +381,34 @@ function tambahKategori() {
 
 function hapusKategori(idx) {
   const list = getKategori();
-  const nama = list[idx];
+  const item = list[idx];
+  const nama = typeof item === 'string' ? item : (item.nama || item);
+  const id = typeof item === 'object' && item.id ? item.id : ('kat_' + nama);
+  
+  if (!confirm(`Hapus kategori "${nama}"?`)) return;
+  
   list.splice(idx, 1);
   saveKategori(list);
-  autoSync('kategori', 'delete', null, 'kat_'+nama);
+  autoSync('kategori', 'delete', null, id);
   renderKategoriProduk();
   showToast('Kategori dihapus');
 }
 
 function editKategori(idx) {
   const list = getKategori();
-  const nama = prompt('Edit kategori:', list[idx]);
+  const item = list[idx];
+  const oldNama = typeof item === 'string' ? item : (item.nama || item);
+  const id = typeof item === 'object' && item.id ? item.id : ('kat_' + Date.now());
+  
+  const nama = prompt('Edit kategori:', oldNama);
   if (!nama?.trim()) return;
+  
+  // Update list - keep as string for local storage
   list[idx] = nama.trim();
   saveKategori(list);
-  autoSync('kategori', 'upsert', { id: 'kat_'+idx, nama: nama.trim() });
+  
+  // Sync to GAS with proper object format
+  autoSync('kategori', 'upsert', { id, nama: nama.trim() });
   renderKategoriProduk();
   showToast('Kategori diperbarui');
 }
