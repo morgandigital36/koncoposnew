@@ -56,12 +56,28 @@ function laporanTable(headers, rows, emptyMsg = 'Tidak ada data') {
 // ===================================================
 // 1. LAPORAN PENJUALAN — dengan CRUD (hapus transaksi)
 // ===================================================
+function initLaporanPenjualanDates() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('lp-dari');
+  const sampaiEl = document.getElementById('lp-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+}
+
 function renderLaporanPenjualan() {
-  const filter = document.getElementById('lp-filter')?.value || 'bulan';
   const body = document.getElementById('laporan-penjualan-body');
   if (!body) return;
 
-  const trxList = DB.get('transaksi').filter(t => laporanInRange(t.tanggal, filter));
+  const dari = document.getElementById('lp-dari')?.value;
+  const sampai = document.getElementById('lp-sampai')?.value;
+  const query = document.getElementById('lp-search')?.value.toLowerCase() || '';
+
+  let trxList = DB.get('transaksi');
+  if (dari) trxList = trxList.filter(t => t.tanggal >= dari);
+  if (sampai) trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+  if (query) trxList = trxList.filter(t => (t.pelanggan || 'umum').toLowerCase().includes(query));
+
   const lunas = trxList.filter(t => t.metodePembayaran !== 'Piutang');
   const piutang = trxList.filter(t => t.metodePembayaran === 'Piutang');
   const totalPenjualan = trxList.reduce((s, t) => s + t.total, 0);
@@ -114,6 +130,24 @@ function renderLaporanPenjualan() {
   ]) + `<div style="margin-top:4px;">${rows}</div>`;
 }
 
+function exportPenjualanPDF() {
+  showToast('Export PDF Penjualan - Coming soon!');
+}
+
+function exportPenjualanExcel() {
+  const dari = document.getElementById('lp-dari')?.value || '';
+  const sampai = document.getElementById('lp-sampai')?.value || '';
+  let list = DB.get('transaksi');
+  if (dari) list = list.filter(t => t.tanggal >= dari);
+  if (sampai) list = list.filter(t => t.tanggal <= sampai + 'T23:59:59');
+
+  const csv = 'Tanggal,Invoice,Pelanggan,Items,Total,Metode,Status\n' + list.map(t => {
+    const status = t.metodePembayaran === 'Piutang' ? 'Piutang' : 'Lunas';
+    return `${t.tanggal},${t.id},${t.pelanggan || 'Umum'},${t.items.length},${t.total},${t.metodePembayaran},${status}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-penjualan.csv');
+}
+
 function hapusTransaksi(id) {
   const trx = DB.get('transaksi').find(t => t.id === id);
   if (!trx) return;
@@ -136,12 +170,25 @@ function lihatDetailTransaksi(id) {
 // ===================================================
 // 2. PRODUK TERJUAL
 // ===================================================
+function initProdukTerjualDates() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('lpt-dari');
+  const sampaiEl = document.getElementById('lpt-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+}
+
 function renderLaporanProdukTerjual() {
-  const filter = document.getElementById('lpt-filter')?.value || 'bulan';
   const body = document.getElementById('laporan-produk-terjual-body');
   if (!body) return;
 
-  const trxList = DB.get('transaksi').filter(t => laporanInRange(t.tanggal, filter));
+  const dari = document.getElementById('lpt-dari')?.value;
+  const sampai = document.getElementById('lpt-sampai')?.value;
+
+  let trxList = DB.get('transaksi');
+  if (dari) trxList = trxList.filter(t => t.tanggal >= dari);
+  if (sampai) trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
 
   // Aggregate per produk
   const produkMap = {};
@@ -175,6 +222,31 @@ function renderLaporanProdukTerjual() {
   );
 }
 
+function exportProdukTerjualPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportProdukTerjualExcel() {
+  const dari = document.getElementById('lpt-dari')?.value || '';
+  const sampai = document.getElementById('lpt-sampai')?.value || '';
+  let trxList = DB.get('transaksi');
+  if (dari) trxList = trxList.filter(t => t.tanggal >= dari);
+  if (sampai) trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+
+  const produkMap = {};
+  trxList.forEach(t => {
+    t.items.forEach(item => {
+      if (!produkMap[item.nama]) produkMap[item.nama] = { qty: 0, total: 0 };
+      produkMap[item.nama].qty += item.qty;
+      produkMap[item.nama].total += item.qty * item.harga;
+    });
+  });
+
+  const data = Object.entries(produkMap).sort((a, b) => b[1].qty - a[1].qty);
+  const csv = 'Produk,Qty,Nominal\n' + data.map(([nama, v]) => `${nama},${v.qty},${v.total}`).join('\n');
+  downloadCSV(csv, 'laporan-produk-terjual.csv');
+}
+
 // ===================================================
 // 3. PIUTANG PELANGGAN
 // ===================================================
@@ -202,13 +274,30 @@ function renderLaporanPiutang() {
     return;
   }
 
-  body.innerHTML = entries.map(([nama, v], i) => `
+  const totalPiutang = entries.reduce((s, [, v]) => s + v.total, 0);
+
+  body.innerHTML = summaryCard([
+    { label: 'Total Pelanggan', value: entries.length },
+    { label: 'Total Piutang', value: fmt(totalPiutang), color: 'var(--danger)' },
+  ]) + entries.map(([nama, v], i) => `
     <div class="laporan-row-item" onclick="showToast('${nama}: ${v.invoices} invoice')">
       <span class="laporan-col-no">${i + 1}</span>
       <span class="laporan-col-main">${nama}</span>
       <span class="laporan-col-mid">${v.invoices}</span>
       <span class="laporan-col-right" style="color:var(--danger);font-weight:600;">${fmt(v.total)}</span>
     </div>`).join('');
+}
+
+function exportPiutangPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportPiutangExcel() {
+  const trxList = DB.get('transaksi').filter(t => t.metodePembayaran === 'Piutang' && !t.lunas);
+  const csv = 'Tanggal,Invoice,Pelanggan,Total,Jatuh Tempo\n' + trxList.map(t => {
+    return `${t.tanggal},${t.id},${t.pelanggan || 'Umum'},${t.total},${t.tglJthTempo || '-'}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-piutang.csv');
 }
 
 function lunaskanPiutangLaporan(id) {
@@ -222,12 +311,26 @@ function lunaskanPiutangLaporan(id) {
 // ===================================================
 // 4. LAPORAN PEMBELIAN
 // ===================================================
+function initPembelianDates() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('lpb-dari');
+  const sampaiEl = document.getElementById('lpb-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+}
+
 function renderLaporanPembelian() {
-  const filter = document.getElementById('lpb-filter')?.value || 'bulan';
   const body = document.getElementById('laporan-pembelian-body');
   if (!body) return;
 
-  const list = DB.get('pembelian').filter(b => laporanInRange(b.tanggal, filter));
+  const dari = document.getElementById('lpb-dari')?.value;
+  const sampai = document.getElementById('lpb-sampai')?.value;
+
+  let list = DB.get('pembelian');
+  if (dari) list = list.filter(b => b.tanggal >= dari);
+  if (sampai) list = list.filter(b => b.tanggal <= sampai + 'T23:59:59');
+
   const totalBeli = list.reduce((s, b) => s + b.total, 0);
   const lunas = list.filter(b => b.status === 'lunas');
   const hutang = list.filter(b => b.status === 'hutang');
@@ -253,6 +356,23 @@ function renderLaporanPembelian() {
     rows,
     'Belum ada data pembelian'
   );
+}
+
+function exportPembelianPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportPembelianExcel() {
+  const dari = document.getElementById('lpb-dari')?.value || '';
+  const sampai = document.getElementById('lpb-sampai')?.value || '';
+  let list = DB.get('pembelian');
+  if (dari) list = list.filter(b => b.tanggal >= dari);
+  if (sampai) list = list.filter(b => b.tanggal <= sampai + 'T23:59:59');
+
+  const csv = 'Tanggal,Produk,Supplier,Qty,Harga,Total,Status\n' + list.map(b => {
+    return `${b.tanggal},${b.produkNama},${b.supplierNama || '-'},${b.jumlah},${b.harga},${b.total},${b.status}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-pembelian.csv');
 }
 
 // ===================================================
@@ -282,7 +402,12 @@ function renderLaporanHutangSupplier() {
     return;
   }
 
-  body.innerHTML = entries.map(([nama, v], i) => `
+  const totalHutang = entries.reduce((s, [, v]) => s + v.total, 0);
+
+  body.innerHTML = summaryCard([
+    { label: 'Total Supplier', value: entries.length },
+    { label: 'Total Hutang', value: fmt(totalHutang), color: 'var(--danger)' },
+  ]) + entries.map(([nama, v], i) => `
     <div class="laporan-row-item" onclick="showToast('${nama}: ${v.invoices} invoice')">
       <span class="laporan-col-no">${i + 1}</span>
       <span class="laporan-col-main">${nama}</span>
@@ -291,12 +416,16 @@ function renderLaporanHutangSupplier() {
     </div>`).join('');
 }
 
-function bayarHutangLaporan(id) {
-  const list = DB.get('pembelian');
-  const idx = list.findIndex(b => b.id === id);
-  if (idx !== -1) { list[idx].status = 'lunas'; DB.set('pembelian', list); autoSync('pembelian', 'update', list[idx], id); }
-  renderLaporanHutangSupplier();
-  showToast('Hutang dilunasi!');
+function exportHutangPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportHutangExcel() {
+  const hutangList = DB.get('pembelian').filter(b => b.status === 'hutang');
+  const csv = 'Tanggal,Produk,Supplier,Total,Jatuh Tempo\n' + hutangList.map(b => {
+    return `${b.tanggal},${b.produkNama},${b.supplierNama || '-'},${b.total},${b.tglJthTempo || '-'}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-hutang-supplier.csv');
 }
 
 // ===================================================
@@ -342,6 +471,19 @@ function renderLaporanPersediaan() {
     rows,
     'Belum ada produk'
   );
+}
+
+function exportPersediaanPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportPersediaanExcel() {
+  const products = getProducts();
+  const csv = 'Produk,Kategori,Stok,Minimal,Harga Beli,Nilai Stok\n' + products.map(p => {
+    const stok = p.stok ?? p.stokAwal ?? 0;
+    return `${p.nama},${p.kategori || '-'},${stok},${p.stokMinimal || 0},${p.hargaBeli || 0},${stok * (p.hargaBeli || 0)}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-persediaan.csv');
 }
 
 // ===================================================
@@ -401,14 +543,36 @@ function renderLaporanMutasiStok() {
 // ===================================================
 // 8. LABA RUGI
 // ===================================================
+function initLabaRugiDates() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('llr-dari');
+  const sampaiEl = document.getElementById('llr-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+}
+
 function renderLaporanLabaRugi() {
-  const filter = document.getElementById('llr-filter')?.value || 'bulan';
   const body = document.getElementById('laporan-labarugi-body');
   if (!body) return;
 
-  const trxList = DB.get('transaksi').filter(t => laporanInRange(t.tanggal, filter));
-  const pembelianList = DB.get('pembelian').filter(b => laporanInRange(b.tanggal, filter));
-  const biayaList = DB.get('biaya').filter(b => laporanInRange(b.tanggal, filter));
+  const dari = document.getElementById('llr-dari')?.value;
+  const sampai = document.getElementById('llr-sampai')?.value;
+
+  let trxList = DB.get('transaksi');
+  let pembelianList = DB.get('pembelian');
+  let biayaList = DB.get('biaya');
+
+  if (dari) {
+    trxList = trxList.filter(t => t.tanggal >= dari);
+    pembelianList = pembelianList.filter(b => b.tanggal >= dari);
+    biayaList = biayaList.filter(b => b.tanggal >= dari);
+  }
+  if (sampai) {
+    trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+    pembelianList = pembelianList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+    biayaList = biayaList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+  }
 
   const pendapatanPenjualan = trxList.reduce((s, t) => s + t.total, 0);
   const hppPenjualan = trxList.reduce((s, t) =>
@@ -441,17 +605,70 @@ function renderLaporanLabaRugi() {
     </div>`;
 }
 
+function exportLabaRugiPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportLabaRugiExcel() {
+  const dari = document.getElementById('llr-dari')?.value || '';
+  const sampai = document.getElementById('llr-sampai')?.value || '';
+  
+  let trxList = DB.get('transaksi');
+  let biayaList = DB.get('biaya');
+  
+  if (dari) {
+    trxList = trxList.filter(t => t.tanggal >= dari);
+    biayaList = biayaList.filter(b => b.tanggal >= dari);
+  }
+  if (sampai) {
+    trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+    biayaList = biayaList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+  }
+
+  const pendapatan = trxList.reduce((s, t) => s + t.total, 0);
+  const hpp = trxList.reduce((s, t) => s + t.items.reduce((ss, item) => ss + (item.hargaBeli || 0) * item.qty, 0), 0);
+  const biaya = biayaList.filter(b => b.tipe === 'biaya').reduce((s, b) => s + b.nominal, 0);
+  const pendapatanLain = biayaList.filter(b => b.tipe === 'pendapatan').reduce((s, b) => s + b.nominal, 0);
+  const labaKotor = pendapatan - hpp;
+  const labaBersih = labaKotor - biaya + pendapatanLain;
+
+  const csv = `Keterangan,Nominal\nPendapatan Penjualan,${pendapatan}\nPendapatan Lain,${pendapatanLain}\nTotal Pendapatan,${pendapatan + pendapatanLain}\nHPP,${hpp}\nBiaya Operasional,${biaya}\nTotal Beban,${hpp + biaya}\nLaba Kotor,${labaKotor}\nLaba Bersih,${labaBersih}`;
+  downloadCSV(csv, 'laporan-laba-rugi.csv');
+}
+
 // ===================================================
 // 9. ARUS KAS
 // ===================================================
+function initArusKasDates() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('lak-dari');
+  const sampaiEl = document.getElementById('lak-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+}
+
 function renderLaporanArusKas() {
-  const filter = document.getElementById('lak-filter')?.value || 'bulan';
   const body = document.getElementById('laporan-arkas-body');
   if (!body) return;
 
-  const trxList = DB.get('transaksi').filter(t => laporanInRange(t.tanggal, filter));
-  const pembelianList = DB.get('pembelian').filter(b => laporanInRange(b.tanggal, filter) && b.status === 'lunas');
-  const biayaList = DB.get('biaya').filter(b => laporanInRange(b.tanggal, filter));
+  const dari = document.getElementById('lak-dari')?.value;
+  const sampai = document.getElementById('lak-sampai')?.value;
+
+  let trxList = DB.get('transaksi');
+  let pembelianList = DB.get('pembelian').filter(b => b.status === 'lunas');
+  let biayaList = DB.get('biaya');
+
+  if (dari) {
+    trxList = trxList.filter(t => t.tanggal >= dari);
+    pembelianList = pembelianList.filter(b => b.tanggal >= dari);
+    biayaList = biayaList.filter(b => b.tanggal >= dari);
+  }
+  if (sampai) {
+    trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+    pembelianList = pembelianList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+    biayaList = biayaList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+  }
 
   const kasmasuk = trxList.filter(t => t.metodePembayaran !== 'Piutang').reduce((s, t) => s + t.total, 0);
   const pendapatanLain = biayaList.filter(b => b.tipe === 'pendapatan').reduce((s, b) => s + b.nominal, 0);
@@ -494,15 +711,77 @@ function renderLaporanArusKas() {
   ]) + laporanTable(['Tanggal', 'Keterangan', 'Nominal'], rows, 'Belum ada transaksi kas');
 }
 
+function exportArusKasPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportArusKasExcel() {
+  const dari = document.getElementById('lak-dari')?.value || '';
+  const sampai = document.getElementById('lak-sampai')?.value || '';
+
+  let trxList = DB.get('transaksi');
+  let pembelianList = DB.get('pembelian').filter(b => b.status === 'lunas');
+  let biayaList = DB.get('biaya');
+
+  if (dari) {
+    trxList = trxList.filter(t => t.tanggal >= dari);
+    pembelianList = pembelianList.filter(b => b.tanggal >= dari);
+    biayaList = biayaList.filter(b => b.tanggal >= dari);
+  }
+  if (sampai) {
+    trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+    pembelianList = pembelianList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+    biayaList = biayaList.filter(b => b.tanggal <= sampai + 'T23:59:59');
+  }
+
+  const allEvents = [
+    ...trxList.filter(t => t.metodePembayaran !== 'Piutang').map(t => ({
+      tgl: t.tanggal, label: 'Penjualan ' + t.id.replace('trx_', '#'),
+      nominal: t.total, tipe: 'Masuk'
+    })),
+    ...biayaList.filter(b => b.tipe === 'pendapatan').map(b => ({
+      tgl: b.tanggal, label: b.kategori || 'Pendapatan Lain',
+      nominal: b.nominal, tipe: 'Masuk'
+    })),
+    ...pembelianList.map(b => ({
+      tgl: b.tanggal, label: 'Pembelian ' + (b.produkNama || ''),
+      nominal: b.total, tipe: 'Keluar'
+    })),
+    ...biayaList.filter(b => b.tipe === 'biaya').map(b => ({
+      tgl: b.tanggal, label: b.kategori || 'Biaya',
+      nominal: b.nominal, tipe: 'Keluar'
+    })),
+  ].sort((a, b) => new Date(b.tgl) - new Date(a.tgl));
+
+  const csv = 'Tanggal,Keterangan,Tipe,Nominal\n' + allEvents.map(e => {
+    return `${e.tgl},${e.label},${e.tipe},${e.nominal}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-arus-kas.csv');
+}
+
 // ===================================================
 // 10. BIAYA & PENDAPATAN LAIN
 // ===================================================
+function initBiayaDates() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('lbp-dari');
+  const sampaiEl = document.getElementById('lbp-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+}
+
 function renderLaporanBiaya() {
-  const filter = document.getElementById('lbp-filter')?.value || 'bulan';
   const body = document.getElementById('laporan-biaya-body');
   if (!body) return;
 
-  const list = DB.get('biaya').filter(b => laporanInRange(b.tanggal, filter));
+  const dari = document.getElementById('lbp-dari')?.value;
+  const sampai = document.getElementById('lbp-sampai')?.value;
+
+  let list = DB.get('biaya');
+  if (dari) list = list.filter(b => b.tanggal >= dari);
+  if (sampai) list = list.filter(b => b.tanggal <= sampai + 'T23:59:59');
+
   const totalBiaya = list.filter(b => b.tipe === 'biaya').reduce((s, b) => s + b.nominal, 0);
   const totalPendapatan = list.filter(b => b.tipe === 'pendapatan').reduce((s, b) => s + b.nominal, 0);
 
@@ -529,6 +808,24 @@ function renderLaporanBiaya() {
     rows,
     'Belum ada data biaya/pendapatan'
   );
+}
+
+function exportBiayaPDF() {
+  showToast('Export PDF - Coming soon!');
+}
+
+function exportBiayaExcel() {
+  const dari = document.getElementById('lbp-dari')?.value || '';
+  const sampai = document.getElementById('lbp-sampai')?.value || '';
+
+  let list = DB.get('biaya');
+  if (dari) list = list.filter(b => b.tanggal >= dari);
+  if (sampai) list = list.filter(b => b.tanggal <= sampai + 'T23:59:59');
+
+  const csv = 'Tanggal,Kategori,Keterangan,Nominal,Tipe\n' + list.map(b => {
+    return `${b.tanggal},${b.kategori || '-'},${b.keterangan || '-'},${b.nominal},${b.tipe}`;
+  }).join('\n');
+  downloadCSV(csv, 'laporan-biaya-pendapatan.csv');
 }
 
 // ===================================================
@@ -907,16 +1204,16 @@ function downloadCSV(csv, filename) {
 // ===== SCREEN INIT LISTENER =====
 document.addEventListener('screenInit', (e) => {
   const { name } = e.detail;
-  if (name === 'laporan-penjualan') renderLaporanPenjualan();
-  if (name === 'laporan-produk-terjual') renderLaporanProdukTerjual();
+  if (name === 'laporan-penjualan') { initLaporanPenjualanDates(); renderLaporanPenjualan(); }
+  if (name === 'laporan-produk-terjual') { initProdukTerjualDates(); renderLaporanProdukTerjual(); }
   if (name === 'laporan-piutang') renderLaporanPiutang();
-  if (name === 'laporan-pembelian') renderLaporanPembelian();
+  if (name === 'laporan-pembelian') { initPembelianDates(); renderLaporanPembelian(); }
   if (name === 'laporan-hutang-supplier') renderLaporanHutangSupplier();
   if (name === 'laporan-persediaan') renderLaporanPersediaan();
   if (name === 'laporan-mutasi-stok') { initMutasiDates(); renderLaporanMutasiStok(); }
-  if (name === 'laporan-laba-rugi') renderLaporanLabaRugi();
-  if (name === 'laporan-arus-kas') renderLaporanArusKas();
-  if (name === 'laporan-biaya') renderLaporanBiaya();
+  if (name === 'laporan-laba-rugi') { initLabaRugiDates(); renderLaporanLabaRugi(); }
+  if (name === 'laporan-arus-kas') { initArusKasDates(); renderLaporanArusKas(); }
+  if (name === 'laporan-biaya') { initBiayaDates(); renderLaporanBiaya(); }
   if (name === 'laporan-omset-sales') { initOmsetDates(); renderLaporanOmsetSales(); }
   if (name === 'laporan-invoice-pelanggan') { initInvoicePelangganDates(); renderLaporanInvoicePelanggan(); }
   if (name === 'laporan-invoice-supplier') { initInvoiceSupplierDates(); renderLaporanInvoiceSupplier(); }

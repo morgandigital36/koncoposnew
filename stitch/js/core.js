@@ -17,6 +17,7 @@ const BOTTOM_NAV_SCREENS = ['pos', 'biaya', 'beranda', 'laporan', 'pengaturan'];
 const NAV_PARENT = {
   'pos': 'pos', 'pos-settings': 'pos',
   'keranjang': 'pos', 'checkout': 'pos', 'struk': 'pos',
+  'log-transaksi': 'pos',
   'tambah-produk': 'pengaturan', 'master-produk': 'pengaturan',
   'kategori-produk': 'pengaturan', 'outlet': 'pengaturan',
   'akun': 'pengaturan', 'ganti-password': 'pengaturan',

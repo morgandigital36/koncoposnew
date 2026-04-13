@@ -1,5 +1,5 @@
 <div class="pos-navbar">
-  <button class="pos-nav-btn" onclick="switchScreen('pengaturan')">
+  <button class="pos-nav-btn" onclick="switchScreen('log-transaksi')">
     <i class="fa-solid fa-bars"></i>
   </button>
   <div class="pos-search-box">
@@ -26,8 +26,8 @@
   <button class="pos-cat-btn" onclick="filterCategory(this, 'minuman')">Minuman</button>
   <button class="pos-cat-btn" onclick="filterCategory(this, 'snack')">Snack</button>
   <button class="pos-cat-btn" onclick="filterCategory(this, 'lainnya')">Lainnya</button>
-  <div class="pos-view-toggle" onclick="showToast('Ganti Tampilan')">
-    <i class="fa-solid fa-list"></i>
+  <div class="pos-view-toggle" onclick="togglePosView()">
+    <i class="fa-solid fa-th" id="pos-view-icon"></i>
   </div>
 </div>
 

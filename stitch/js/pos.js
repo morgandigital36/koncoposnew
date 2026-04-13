@@ -6,8 +6,18 @@ let posActiveCat = 'semua';
 let cart = [];
 let selectedPayMethod = 'Tunai';
 let _lastTrx = null;
+let posViewMode = 'list'; // 'list' or 'grid'
 
 // ===== PRODUK LIST =====
+function togglePosView() {
+  posViewMode = posViewMode === 'list' ? 'grid' : 'list';
+  const icon = document.getElementById('pos-view-icon');
+  if (icon) {
+    icon.className = posViewMode === 'list' ? 'fa-solid fa-th' : 'fa-solid fa-list';
+  }
+  renderPosProducts(document.getElementById('posSearchInput')?.value.trim() || '');
+}
+
 function renderPosProducts(query = '') {
   const area = document.getElementById('posProductArea');
   if (!area) return;
@@ -27,17 +37,30 @@ function renderPosProducts(query = '') {
       query ? `"${query}" tidak ditemukan` : 'Belum ada produk');
     return;
   }
-  area.innerHTML = filtered.map(p => `
-    <div class="pos-product-item" onclick="addToCart('${p.id}')">
-      <div class="pos-product-photo">
-        ${p.foto ? `<img src="${p.foto}" alt="${p.nama}" />` : `<i class="fa-solid fa-cube"></i>`}
-      </div>
-      <div class="pos-product-info">
-        <div class="pos-product-nama">${p.nama}</div>
-        <div class="pos-product-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>
-      </div>
-      <div class="pos-product-harga">${fmt(p.hargaJual)}</div>
-    </div>`).join('');
+
+  if (posViewMode === 'grid') {
+    area.innerHTML = `<div class="pos-product-grid">${filtered.map(p => `
+      <div class="pos-product-card" onclick="addToCart('${p.id}')">
+        <div class="pos-card-photo">
+          ${p.foto ? `<img src="${p.foto}" alt="${p.nama}" />` : `<i class="fa-solid fa-cube"></i>`}
+        </div>
+        <div class="pos-card-nama">${p.nama}</div>
+        <div class="pos-card-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>
+        <div class="pos-card-harga">${fmt(p.hargaJual)}</div>
+      </div>`).join('')}</div>`;
+  } else {
+    area.innerHTML = filtered.map(p => `
+      <div class="pos-product-item" onclick="addToCart('${p.id}')">
+        <div class="pos-product-photo">
+          ${p.foto ? `<img src="${p.foto}" alt="${p.nama}" />` : `<i class="fa-solid fa-cube"></i>`}
+        </div>
+        <div class="pos-product-info">
+          <div class="pos-product-nama">${p.nama}</div>
+          <div class="pos-product-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>
+        </div>
+        <div class="pos-product-harga">${fmt(p.hargaJual)}</div>
+      </div>`).join('');
+  }
 }
 
 function filterCategory(el, cat) {
@@ -722,4 +745,173 @@ document.addEventListener('screenInit', (e) => {
   if (name === 'pos') { renderPosProducts(); updateCartBar(); }
   if (name === 'keranjang') { resetCartForm(); renderCartScreen(); }
   if (name === 'checkout') initCheckout();
+  if (name === 'log-transaksi') { initLogTransaksi(); renderLogTransaksi(); }
 });
+
+// ===================================================
+// LOG TRANSAKSI
+// ===================================================
+let logActiveStatus = 'semua';
+let logViewMode = 'list'; // 'list' or 'grid'
+
+function initLogTransaksi() {
+  const today = new Date().toISOString().split('T')[0];
+  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const dariEl = document.getElementById('log-date-dari');
+  const sampaiEl = document.getElementById('log-date-sampai');
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
+  if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
+  logActiveStatus = 'semua';
+  logViewMode = 'list';
+  updateLogViewIcon();
+}
+
+function filterLogStatus(el, status) {
+  document.querySelectorAll('.log-tab-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  logActiveStatus = status;
+  renderLogTransaksi();
+}
+
+function toggleLogView() {
+  logViewMode = logViewMode === 'list' ? 'grid' : 'list';
+  updateLogViewIcon();
+  renderLogTransaksi();
+}
+
+function updateLogViewIcon() {
+  const icon = document.getElementById('log-view-toggle');
+  if (icon) {
+    icon.className = logViewMode === 'list' ? 'fa-solid fa-th' : 'fa-solid fa-list';
+  }
+}
+
+function renderLogTransaksi() {
+  const body = document.getElementById('log-transaksi-body');
+  if (!body) return;
+
+  const dari = document.getElementById('log-date-dari')?.value;
+  const sampai = document.getElementById('log-date-sampai')?.value;
+  const query = document.getElementById('log-search-input')?.value.toLowerCase() || '';
+
+  let trxList = DB.get('transaksi');
+
+  // Filter by date
+  if (dari) trxList = trxList.filter(t => t.tanggal >= dari);
+  if (sampai) trxList = trxList.filter(t => t.tanggal <= sampai + 'T23:59:59');
+
+  // Filter by status
+  if (logActiveStatus === 'piutang') {
+    trxList = trxList.filter(t => t.metodePembayaran === 'Piutang' && !t.lunas);
+  } else if (logActiveStatus === 'draft') {
+    trxList = trxList.filter(t => t.isDraft === true);
+  }
+
+  // Filter by search query
+  if (query) {
+    trxList = trxList.filter(t => 
+      (t.pelanggan || 'umum').toLowerCase().includes(query) ||
+      t.id.toLowerCase().includes(query) ||
+      (t.catatan || '').toLowerCase().includes(query)
+    );
+  }
+
+  // Sort by date (newest first)
+  trxList = trxList.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+
+  if (trxList.length === 0) {
+    body.innerHTML = `<div class="pos-empty-state">
+      <i class="fa-solid fa-receipt" style="font-size:48px;color:#ddd;margin-bottom:8px;"></i>
+      <p class="pos-empty-title">Tidak ada transaksi</p>
+      <p class="pos-empty-sub">Belum ada data untuk filter ini</p>
+    </div>`;
+    return;
+  }
+
+  if (logViewMode === 'grid') {
+    body.innerHTML = `<div class="log-grid">${trxList.map(t => renderLogItemGrid(t)).join('')}</div>`;
+  } else {
+    body.innerHTML = trxList.map(t => renderLogItemList(t)).join('');
+  }
+}
+
+function renderLogItemList(t) {
+  const tgl = new Date(t.tanggal);
+  const tglStr = tgl.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  const waktuStr = tgl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  
+  const statusColor = t.isDraft ? '#f39c12' : (t.metodePembayaran === 'Piutang' && !t.lunas) ? 'var(--danger)' : '#2ecc71';
+  const statusLabel = t.isDraft ? 'Draft' : (t.metodePembayaran === 'Piutang' && !t.lunas) ? 'Piutang' : 'Lunas';
+  const statusBg = t.isDraft ? '#fff8e1' : (t.metodePembayaran === 'Piutang' && !t.lunas) ? '#fde8e8' : '#e8f8f0';
+
+  return `
+  <div class="log-item-list">
+    <div class="log-item-avatar" style="background:${statusBg};">
+      <i class="fa-solid fa-receipt" style="color:${statusColor};font-size:16px;"></i>
+    </div>
+    <div class="log-item-info" onclick="lihatDetailLog('${t.id}')">
+      <div class="log-item-nama">${t.pelanggan || 'Umum'} · ${t.items.length} item</div>
+      <div class="log-item-sub">
+        <span>${tglStr} ${waktuStr}</span>
+        <span style="color:${statusColor};font-weight:600;">${statusLabel}</span>
+      </div>
+      <div class="log-item-total">${fmt(t.total)}</div>
+    </div>
+    <div class="log-item-actions">
+      <button class="log-btn-view" onclick="lihatDetailLog('${t.id}')" title="Lihat Detail">
+        <i class="fa-solid fa-eye"></i>
+      </button>
+      <button class="log-btn-del" onclick="hapusLogTransaksi('${t.id}')" title="Hapus">
+        <i class="fa-solid fa-trash"></i>
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderLogItemGrid(t) {
+  const tgl = new Date(t.tanggal);
+  const tglStr = tgl.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+  const waktuStr = tgl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  
+  const statusColor = t.isDraft ? '#f39c12' : (t.metodePembayaran === 'Piutang' && !t.lunas) ? 'var(--danger)' : '#2ecc71';
+  const statusLabel = t.isDraft ? 'Draft' : (t.metodePembayaran === 'Piutang' && !t.lunas) ? 'Piutang' : 'Lunas';
+
+  return `
+  <div class="log-item-grid" onclick="lihatDetailLog('${t.id}')">
+    <div class="log-grid-header">
+      <div class="log-grid-status" style="background:${statusColor};">${statusLabel}</div>
+      <button class="log-grid-del" onclick="event.stopPropagation();hapusLogTransaksi('${t.id}')">
+        <i class="fa-solid fa-trash"></i>
+      </button>
+    </div>
+    <div class="log-grid-pelanggan">${t.pelanggan || 'Umum'}</div>
+    <div class="log-grid-items">${t.items.length} item</div>
+    <div class="log-grid-total">${fmt(t.total)}</div>
+    <div class="log-grid-date">${tglStr} · ${waktuStr}</div>
+  </div>`;
+}
+
+function lihatDetailLog(id) {
+  const trx = DB.get('transaksi').find(t => t.id === id);
+  if (!trx) return;
+  _lastTrx = trx;
+  switchScreen('struk').then(() => renderStruk(trx));
+}
+
+function hapusLogTransaksi(id) {
+  const trx = DB.get('transaksi').find(t => t.id === id);
+  if (!trx) return;
+  
+  const tgl = new Date(trx.tanggal).toLocaleDateString('id-ID');
+  if (!confirm(`Hapus transaksi ${tgl} - ${fmt(trx.total)}?\n\nPeringatan: Stok produk tidak akan dikembalikan.`)) return;
+  
+  // Delete transaction
+  DB.set('transaksi', DB.get('transaksi').filter(t => t.id !== id));
+  
+  // Sync delete to GAS
+  autoSync('transaksi', 'delete', null, id);
+  
+  // Re-render
+  renderLogTransaksi();
+  showToast('Transaksi dihapus');
+}
