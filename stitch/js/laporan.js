@@ -562,8 +562,7 @@ function renderLaporanMutasiStok() {
 // 8. LABA RUGI
 // ===================================================
 function initLabaRugiDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('llr-dari');
   const sampaiEl = document.getElementById('llr-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -662,8 +661,7 @@ function exportLabaRugiExcel() {
 // 9. ARUS KAS
 // ===================================================
 function initArusKasDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('lak-dari');
   const sampaiEl = document.getElementById('lak-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -789,8 +787,7 @@ function exportArusKasExcel() {
 // 10. BIAYA & PENDAPATAN LAIN
 // ===================================================
 function initBiayaDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('lbp-dari');
   const sampaiEl = document.getElementById('lbp-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -858,8 +855,7 @@ function exportBiayaExcel() {
 // 11. OMSET SALES
 // ===================================================
 function initOmsetDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('omset-dari');
   const sampaiEl = document.getElementById('omset-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -949,8 +945,7 @@ function exportOmsetExcel() {
 // 12. INVOICE PELANGGAN
 // ===================================================
 function initInvoicePelangganDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('inv-pel-dari');
   const sampaiEl = document.getElementById('inv-pel-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -1032,8 +1027,7 @@ function exportInvoicePelangganExcel() {
 // 13. INVOICE SUPPLIER
 // ===================================================
 function initInvoiceSupplierDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('inv-sup-dari');
   const sampaiEl = document.getElementById('inv-sup-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
