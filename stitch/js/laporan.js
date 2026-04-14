@@ -54,11 +54,23 @@ function laporanTable(headers, rows, emptyMsg = 'Tidak ada data') {
 }
 
 // ===================================================
+// HELPER FUNCTIONS
+// ===================================================
+
+// Get date range for last N days
+function getDateRange(days = 30) {
+  const today = new Date().toISOString().split('T')[0];
+  const pastDate = new Date();
+  pastDate.setDate(pastDate.getDate() - days);
+  const firstDay = pastDate.toISOString().split('T')[0];
+  return { firstDay, today };
+}
+
+// ===================================================
 // 1. LAPORAN PENJUALAN — dengan CRUD (hapus transaksi)
 // ===================================================
 function initLaporanPenjualanDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('lp-dari');
   const sampaiEl = document.getElementById('lp-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -175,8 +187,7 @@ function lihatDetailTransaksi(id) {
 // 2. PRODUK TERJUAL
 // ===================================================
 function initProdukTerjualDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('lpt-dari');
   const sampaiEl = document.getElementById('lpt-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -320,8 +331,7 @@ function lunaskanPiutangLaporan(id) {
 // 4. LAPORAN PEMBELIAN
 // ===================================================
 function initPembelianDates() {
-  const today = new Date().toISOString().split('T')[0];
-  const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('lpb-dari');
   const sampaiEl = document.getElementById('lpb-sampai');
   if (dariEl && !dariEl.value) dariEl.value = firstDay;
@@ -498,10 +508,10 @@ function exportPersediaanExcel() {
 // 7. MUTASI STOK
 // ===================================================
 function initMutasiDates() {
-  const today = new Date().toISOString().split('T')[0];
+  const { firstDay, today } = getDateRange(30);
   const dariEl = document.getElementById('mutasi-dari');
   const sampaiEl = document.getElementById('mutasi-sampai');
-  if (dariEl && !dariEl.value) dariEl.value = today;
+  if (dariEl && !dariEl.value) dariEl.value = firstDay;
   if (sampaiEl && !sampaiEl.value) sampaiEl.value = today;
 }
 
