@@ -132,8 +132,11 @@ function initTambahBiaya() {
   const metodeList = _getMetodeList();
   const metodeEl = document.getElementById('biaya-metode');
   if (metodeEl) {
-    metodeEl.innerHTML = metodeList.map(m => `<option value="${m}">${m}</option>`).join('');
-    if (metodeList.length > 0) metodeEl.value = metodeList[0];
+    metodeEl.innerHTML = metodeList.map(m => {
+      const nama = typeof m === 'string' ? m : (m.nama || '');
+      return `<option value="${nama}">${nama}</option>`;
+    }).join('');
+    if (metodeList.length > 0) metodeEl.value = typeof metodeList[0] === 'string' ? metodeList[0] : (metodeList[0].nama || '');
   }
   
   // Load kategori biaya
@@ -141,7 +144,10 @@ function initTambahBiaya() {
   const katEl = document.getElementById('biaya-kategori');
   if (katEl) {
     katEl.innerHTML = '<option value="">Pilih Kategori</option>' + 
-      katList.map(k => `<option value="${k}">${k}</option>`).join('');
+      katList.map(k => {
+        const nama = typeof k === 'string' ? k : (k.nama || '');
+        return `<option value="${nama}">${nama}</option>`;
+      }).join('');
   }
   
   // Set default toggle

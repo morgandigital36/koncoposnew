@@ -2,7 +2,7 @@
 // SYNC v2 — Sinkronisasi LocalStorage ↔ Google Sheets
 // ============================================================
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycby-m0or5eoe2mEfP_R3R3AlPG1oz1B_BDzOYkG-x1R_6qZHAIXfhfPCfDCaLnt9QMs3Bw/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwES0rxy6xvySFBjsqLXceG_NgWNkYua7YcxoWr6v4kRbHpMZ_tq8_fXiXSQAA-2SxDDA/exec';
 
 // ===== STATE =====
 let _syncStatus  = 'idle';
@@ -11,11 +11,23 @@ let _isSyncing   = false;
 let _pendingSync = {};
 let _autoSyncTimer = null;
 
+function getConfiguredGasUrl() {
+  return DB.getObj('gasConfig').url || GAS_URL || '';
+}
+
+function hasGasConfig() {
+  return !!getConfiguredGasUrl();
+}
+
+function normalizeMasterData(list) {
+  return Array.isArray(list) ? list.map(item => typeof item === 'string' ? { id: '', nama: item } : item) : [];
+}
+
 // ============================================================
 // CORE REQUEST — inject token otomatis
 // ============================================================
 async function gasRequest(params) {
-  const url = GAS_URL || DB.getObj('gasConfig').url || '';
+  const url = getConfiguredGasUrl();
   if (!url) throw new Error('GAS_URL belum diisi');
 
   const token = (typeof getToken === 'function') ? getToken() : null;
@@ -82,7 +94,7 @@ const LAPORAN_TRIGGER_SHEETS = new Set([
 let _needGenerateLaporan = false;
 
 function autoSync(sheetKey, action, data, id) {
-  if (!GAS_URL) return;
+  if (!hasGasConfig()) return;
   if (!_pendingSync[sheetKey]) _pendingSync[sheetKey] = [];
   _pendingSync[sheetKey].push({ action, data, id });
 
@@ -95,7 +107,7 @@ function autoSync(sheetKey, action, data, id) {
 }
 
 async function _flushSync() {
-  if (!GAS_URL || _isSyncing) return;
+  if (!hasGasConfig() || _isSyncing) return;
   const pending = { ..._pendingSync };
   _pendingSync = {};
   _isSyncing = true;
@@ -121,6 +133,7 @@ async function _flushSync() {
     }
 
     // Generate laporan di GAS jika ada perubahan data relevan
+    let laporanFailed = false;
     if (_needGenerateLaporan) {
       _needGenerateLaporan = false;
       try {
@@ -128,9 +141,13 @@ async function _flushSync() {
       } catch (e) { /* silent — laporan bisa di-generate manual */ }
     }
 
-    _lastSync = new Date();
-    DB.setObj('lastSync', { time: _lastSync.toISOString(), status: 'ok' });
-    _setSyncStatus('ok');
+    if (Object.keys(failed).length === 0) {
+      _lastSync = new Date();
+      DB.setObj('lastSync', { time: _lastSync.toISOString(), status: 'ok' });
+      _setSyncStatus('ok');
+    } else {
+      _setSyncStatus('error');
+    }
   } catch (e) {
     _setSyncStatus('error');
   } finally {
@@ -152,7 +169,7 @@ function _setSyncStatus(s) {
 // PUSH ALL — kirim semua data lokal ke GAS sekaligus
 // ============================================================
 async function pushAllToSheet() {
-  if (!GAS_URL) { showSyncToast('GAS_URL belum diisi!', 3000, true); return; }
+  if (!hasGasConfig()) { showSyncToast('GAS_URL belum diisi!', 3000, true); return; }
   if (_isSyncing) { showSyncToast('Sync sedang berjalan...'); return; }
 
   _isSyncing = true;
@@ -161,13 +178,10 @@ async function pushAllToSheet() {
 
   try {
     // Prepare kategori data: convert strings to objects for GAS
-    const kategoriLocal = DB.get('kategori');
-    const kategoriForGAS = kategoriLocal.map(k => {
-      if (typeof k === 'string') {
-        return { id: 'kat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), nama: k };
-      }
-      return k; // already an object
-    });
+    const kategoriForGAS = normalizeMasterData(DB.get('kategori')).map((k, idx) => ({
+      id: k.id || ('kat_' + idx + '_' + Date.now()),
+      nama: k.nama || '',
+    }));
     
     const result = await gasRequest({
       body: {
@@ -184,9 +198,9 @@ async function pushAllToSheet() {
           sales:           DB.get('sales'),
           kurir:           DB.get('kurir'),
           kasir:           DB.get('kasir'),
-          jenisPenjualan:  DB.get('jenisPenjualan'),
-          metodePembayaran:DB.get('metodePembayaran'),
-          kategoriBiaya:   DB.get('kategoriBiaya'),
+          jenisPenjualan:  normalizeMasterData(DB.get('jenisPenjualan')).map((k, idx) => ({ id: k.id || ('jp_' + idx), nama: k.nama || '' })),
+          metodePembayaran:normalizeMasterData(DB.get('metodePembayaran')).map((k, idx) => ({ id: k.id || ('mp_' + idx), nama: k.nama || '' })),
+          kategoriBiaya:   normalizeMasterData(DB.get('kategoriBiaya')).map((k, idx) => ({ id: k.id || ('kb_' + idx), nama: k.nama || '' })),
           outlet:          DB.getObj('outlet'),
         }
       }
@@ -212,7 +226,7 @@ async function pushAllToSheet() {
 // PULL ALL — ambil semua data dari GAS ke lokal
 // ============================================================
 async function pullAllFromSheet() {
-  if (!GAS_URL) { showSyncToast('GAS_URL belum diisi!', 3000, true); return; }
+  if (!hasGasConfig()) { showSyncToast('GAS_URL belum diisi!', 3000, true); return; }
   if (_isSyncing) { showSyncToast('Sync sedang berjalan...'); return; }
 
   _isSyncing = true;
@@ -244,11 +258,6 @@ async function pullAllFromSheet() {
     Object.entries(map).forEach(([gasKey, localKey]) => {
       if (data[gasKey] !== undefined) {
         let value = data[gasKey];
-        
-        // Special handling for kategori: convert objects to strings
-        if (localKey === 'kategori' && Array.isArray(value)) {
-          value = value.map(k => typeof k === 'object' ? (k.nama || String(k)) : k);
-        }
         
         DB.set(localKey, value);
       }
@@ -312,17 +321,28 @@ function updateSyncIndicator() {
   el.title = _lastSync ? 'Sync: ' + _lastSync.toLocaleString('id-ID') : 'Belum sync';
 }
 
+function updateSyncIndicatorBig() {
+  const el = document.getElementById('sync-indicator-big');
+  if (!el) return;
+  const icons  = { idle:'☁', syncing:'↻', ok:'✓', error:'✕' };
+  const colors = { idle:'#aaa', syncing:'#f39c12', ok:'#2ecc71', error:'#e74c3c' };
+  el.textContent = icons[_syncStatus] || '☁';
+  el.style.color = colors[_syncStatus] || '#aaa';
+}
+
 function initSyncSettings() {
   const urlEl     = document.getElementById('sync-gas-url');
   const statusEl  = document.getElementById('sync-status-text');
   const lastSyncEl= document.getElementById('sync-last-time');
-  if (urlEl) urlEl.value = GAS_URL || '';
+  const currentUrl = getConfiguredGasUrl();
+  if (urlEl) urlEl.value = currentUrl || '';
   const ls = DB.getObj('lastSync');
   if (lastSyncEl && ls.time) lastSyncEl.textContent = new Date(ls.time).toLocaleString('id-ID');
   if (statusEl) {
-    statusEl.textContent = GAS_URL ? 'Terkonfigurasi ✓' : 'Belum dikonfigurasi';
-    statusEl.style.color = GAS_URL ? '#2ecc71' : '#f39c12';
+    statusEl.textContent = currentUrl ? 'Terkonfigurasi ✓' : 'Belum dikonfigurasi';
+    statusEl.style.color = currentUrl ? '#2ecc71' : '#f39c12';
   }
+  updateSyncIndicatorBig();
 }
 
 async function testKoneksiGAS() {

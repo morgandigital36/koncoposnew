@@ -410,7 +410,7 @@ function bukaPickerJenisPenjualan() {
   const modal = document.getElementById('modal-jenis-penjualan');
   if (modal) modal.style.display = 'flex';
   const defaults = ['Reguler', 'Grosir', 'Online'];
-  const list = DB.get('jenisPenjualan').length ? DB.get('jenisPenjualan') : defaults;
+  const list = DB.get('jenisPenjualan').length ? DB.get('jenisPenjualan').map(j => typeof j === 'string' ? j : (j.nama || '')) : defaults;
   const container = document.getElementById('jenis-penjualan-modal-list');
   if (!container) return;
   container.innerHTML = list.map(j => `

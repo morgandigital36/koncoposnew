@@ -25,7 +25,7 @@ var SHEETS = {
 var SCHEMAS = {
   'Users':['id','namaLengkap','email','password','namaUsaha','jenisUsaha','telp','role','status','createdAt','lastLogin'],
   'Sessions':['token','userId','email','namaUsaha','createdAt','expiresAt'],
-  'Produk':['id','userId','nama','kategori','varian','hargaBeli','hargaJual','diskonPct','diskonRp','kode','unit','barcode','keterangan','tipeModal','pantauStok','stokMinimal','stokAwal','stok','totalModal','createdAt','updatedAt'],
+  'Produk':['id','userId','nama','kategori','varian','hargaBeli','hargaJual','diskonPct','diskonRp','kode','unit','barcode','keterangan','tipeModal','pantauStok','stokMinimal','stokAwal','stok','totalModal','foto','varians','grosirs','createdAt','updatedAt'],
   'Kategori Produk':['id','userId','nama','createdAt'],
   'Pelanggan':['id','userId','nama','telp','email','alamat','ket','createdAt','updatedAt'],
   'Supplier':['id','userId','nama','telp','email','alamat','ket','createdAt','updatedAt'],
@@ -35,7 +35,7 @@ var SCHEMAS = {
   'Jenis Penjualan':['id','userId','nama','createdAt'],
   'Metode Pembayaran':['id','userId','nama','createdAt'],
   'Kategori Biaya':['id','userId','nama','createdAt'],
-  'Transaksi':['id','userId','tanggal','tglJthTempo','pelangganId','pelanggan','noMeja','jenisPenjualan','salesId','sales','total','metodePembayaran','catatan','bayar','kembalian','lunas','createdAt'],
+  'Transaksi':['id','userId','tanggal','tglJthTempo','pelangganId','pelanggan','noMeja','jenisPenjualan','salesId','sales','items','total','metodePembayaran','catatan','bayar','kembalian','lunas','isDraft','createdAt','updatedAt'],
   'Transaksi Items':['id','userId','transaksiId','produkId','nama','harga','hargaBeli','qty','unit','subtotal','createdAt'],
   'Pembelian':['id','userId','tanggal','supplierId','supplierNama','produkId','produkNama','unit','jumlah','harga','total','status','tglJthTempo','keterangan','createdAt'],
   'Mutasi Stok':['id','userId','tanggal','produkId','produkNama','tipe','jumlah','keterangan','createdAt'],
@@ -51,9 +51,15 @@ var SCHEMAS = {
   'Laporan Invoice Pelanggan':['userId','tanggal','invoiceId','pelanggan','items','total','metode','status','tglJthTempo'],
   'Laporan Invoice Supplier':['userId','tanggal','invoiceId','supplier','produk','jumlah','total','status','tglJthTempo'],
   'Laporan Jatuh Tempo':['userId','tanggal','tipe','invoiceId','pihak','total','tglJthTempo','selisihHari','status'],
-  'Outlet':['userId','key','value'],
+  'Outlet':['id','userId','key','value','updatedAt'],
   'Settings':['userId','key','value'],
   'Sync Log':['waktu','userId','aksi','sheet','jumlah','status','pesan']
+};
+
+var JSON_FIELDS = {
+  produk: { varians:true, grosirs:true },
+  kasir: { permissions:true },
+  transaksi: { items:true }
 };
 
 
@@ -114,7 +120,10 @@ function setupDatabase() {
       sh.getRange(1,1,1,headers.length).setBackground(bg).setFontColor('#fff').setFontWeight('bold');
       sh.setFrozenRows(1);
       created.push(name);
-    } else { existing.push(name); }
+    } else {
+      existing.push(name);
+      ensureSheetSchema_(sh, SCHEMAS[name]);
+    }
   }
   try {
     SpreadsheetApp.getUi().alert(
@@ -123,6 +132,23 @@ function setupDatabase() {
     );
   } catch(e) {}
   return {status:'ok', created:created, existing:existing};
+}
+
+function ensureSheetSchema_(sh, expectedHeaders) {
+  var existingHeaders = getHeaders(sh);
+  if (!existingHeaders.length) {
+    sh.getRange(1,1,1,expectedHeaders.length).setValues([expectedHeaders]);
+    sh.setFrozenRows(1);
+    return;
+  }
+  for (var i = 0; i < expectedHeaders.length; i++) {
+    if (existingHeaders[i] === expectedHeaders[i]) continue;
+    if (existingHeaders.indexOf(expectedHeaders[i]) === -1) {
+      sh.insertColumnAfter(Math.max(i, sh.getLastColumn()));
+      sh.getRange(1, i + 1).setValue(expectedHeaders[i]);
+      existingHeaders.splice(i, 0, expectedHeaders[i]);
+    }
+  }
 }
 
 
@@ -183,6 +209,8 @@ function updateProfile(userId,data) {
   var allowed=['namaLengkap','namaUsaha','jenisUsaha','telp'];
   var upd={};
   allowed.forEach(function(k){if(data[k]!==undefined)upd[k]=data[k]});
+  if (data.nama!==undefined) upd.namaLengkap=data.nama;
+  if (data.email!==undefined) upd.email=data.email;
   if (data.password&&data.password.length>=6) upd.password=hashPw(data.password);
   return updateRow('users',userId,upd,userId);
 }
@@ -242,7 +270,11 @@ function setupDefaultData(uid,usaha,jenis) {
     shMet.appendRow(hMet.map(function(h){return {id:genId(),userId:uid,nama:n,createdAt:now}[h]||''}));
   });
   var shOut=getSheet('outlet');
-  [[uid,'nama',usaha],[uid,'jenisUsaha',jenis],[uid,'catatan','Terima kasih!']].forEach(function(r){shOut.appendRow(r)});
+  [
+    ['outlet_nama',uid,'nama',usaha,now],
+    ['outlet_jenisUsaha',uid,'jenisUsaha',jenis,now],
+    ['outlet_catatan',uid,'catatan','Terima kasih!',now]
+  ].forEach(function(r){shOut.appendRow(r)});
 }
 
 
@@ -255,7 +287,7 @@ function readAllUser(sheetKey,uid) {
   var rows=data.slice(1).filter(function(r){
     return uidCol===-1||String(r[uidCol])===String(uid);
   }).map(function(r){
-    var o={}; headers.forEach(function(h,i){o[h]=r[i]===''?null:r[i]}); return o;
+    var o={}; headers.forEach(function(h,i){o[h]=decodeSheetValue_(sheetKey, h, r[i])}); return o;
   });
   return {rows:rows,count:rows.length};
 }
@@ -266,7 +298,7 @@ function readOne(sheetKey,id,uid) {
   for (var i=1;i<data.length;i++) {
     if (String(data[i][idCol])===String(id)) {
       if (uidCol!==-1&&uid&&String(data[i][uidCol])!==String(uid)) return {error:'Akses ditolak'};
-      var o={}; headers.forEach(function(h,j){o[h]=data[i][j]}); return {row:o};
+      var o={}; headers.forEach(function(h,j){o[h]=decodeSheetValue_(sheetKey, h, data[i][j])}); return {row:o};
     }
   }
   return {row:null};
@@ -278,7 +310,8 @@ function createRow(sheetKey,data,uid) {
   if (!data.createdAt) data.createdAt=now;
   if (headers.indexOf('updatedAt')!==-1) data.updatedAt=now;
   if (headers.indexOf('userId')!==-1&&uid) data.userId=uid;
-  sh.appendRow(headers.map(function(h){return data[h]!==undefined?data[h]:''}));
+  if (sheetKey==='outlet' && !data.id) data.id='outlet_'+String(data.key||genId());
+  sh.appendRow(headers.map(function(h){return encodeSheetValue_(sheetKey, h, data[h])}));
   addLog(uid,'create',sheetKey,1,'ok',data.id);
   return {status:'ok',id:data.id};
 }
@@ -294,7 +327,7 @@ function updateRow(sheetKey,id,data,uid) {
   }
   if (rowIdx===-1) return {error:'Data tidak ditemukan'};
   data.updatedAt=new Date().toISOString();
-  headers.forEach(function(h,c){if(data[h]!==undefined)sh.getRange(rowIdx+1,c+1).setValue(data[h])});
+  headers.forEach(function(h,c){if(data[h]!==undefined)sh.getRange(rowIdx+1,c+1).setValue(encodeSheetValue_(sheetKey, h, data[h]))});
   addLog(uid,'update',sheetKey,1,'ok',id);
   return {status:'ok',id:id};
 }
@@ -309,12 +342,16 @@ function deleteRow(sheetKey,id,uid) {
     }
   }
   if (rowIdx===-1) return {error:'Data tidak ditemukan'};
+  if (sheetKey==='transaksi') deleteTransaksiItemsByTransaksiId_(id, uid);
   sh.deleteRow(rowIdx+1);
   addLog(uid,'delete',sheetKey,1,'ok',id);
   return {status:'ok',id:id};
 }
 
 function upsertRow(sheetKey,data,uid) {
+  if (sheetKey==='outlet') {
+    data.id = data.id || ('outlet_' + String(data.key || 'unknown'));
+  }
   if (!data.id) return createRow(sheetKey,data,uid);
   var ex=readOne(sheetKey,data.id,uid);
   return ex.row ? updateRow(sheetKey,data.id,data,uid) : createRow(sheetKey,data,uid);
@@ -332,7 +369,7 @@ function bulkSyncUser(sheetKey,rows,uid) {
     if (!d.id) d.id=genId();
     if (!d.createdAt) d.createdAt=now;
     if (uidCol!==-1) d.userId=uid;
-    return headers.map(function(h){return d[h]!==undefined?d[h]:''});
+    return headers.map(function(h){return encodeSheetValue_(sheetKey, h, d[h])});
   });
   sh.getRange(sh.getLastRow()+1,1,newRows.length,headers.length).setValues(newRows);
   return {status:'ok',count:newRows.length};
@@ -387,9 +424,10 @@ function pushAll(data,uid) {
       var uc=headers.indexOf('userId');
       for (var i=all.length-1;i>=1;i--) if(String(all[i][uc])===String(uid)) sh.deleteRow(i+1);
       var oRows=Object.keys(data.outlet).map(function(k){
-        var v=data.outlet[k]; return [uid,k,typeof v==='object'?JSON.stringify(v):String(v)];
+        var v=data.outlet[k];
+        return ['outlet_'+k,uid,k,typeof v==='object'?JSON.stringify(v):String(v),new Date().toISOString()];
       });
-      if (oRows.length) sh.getRange(sh.getLastRow()+1,1,oRows.length,3).setValues(oRows);
+      if (oRows.length) sh.getRange(sh.getLastRow()+1,1,oRows.length,5).setValues(oRows);
       results.outlet={status:'ok'};
     } catch(e){results.outlet={error:e.message};}
   }
@@ -439,7 +477,7 @@ function delUserRows(sh,uid) {
 
 function genLapPenjualan(uid) {
   var sh=getSheet('laporanPenjualan'); delUserRows(sh,uid);
-  var list=readAllUser('transaksi',uid).rows; if(!list.length) return;
+  var list=readAllUser('transaksi',uid).rows.filter(function(t){return !t.isDraft;}); if(!list.length) return;
   var h=getHeaders(sh);
   var rows=list.map(function(t){return h.map(function(k){
     var m={userId:uid,tanggal:t.tanggal,invoiceId:t.id,pelanggan:t.pelanggan||'Umum',
@@ -482,7 +520,7 @@ function genLapStok(uid) {
 
 function genLapLabaRugi(uid) {
   var sh=getSheet('laporanLabaRugi'); delUserRows(sh,uid);
-  var trx=readAllUser('transaksi',uid).rows, biaya=readAllUser('biaya',uid).rows;
+  var trx=readAllUser('transaksi',uid).rows.filter(function(t){return !t.isDraft;}), biaya=readAllUser('biaya',uid).rows;
   var bm={};
   trx.forEach(function(t){
     var k=new Date(t.tanggal).toISOString().slice(0,7);
@@ -510,7 +548,7 @@ function genLapLabaRugi(uid) {
 function genLapArusKas(uid) {
   var sh=getSheet('laporanArusKas'); delUserRows(sh,uid);
   var ev=[];
-  readAllUser('transaksi',uid).rows.forEach(function(t){if(t.metodePembayaran!=='Piutang') ev.push({tgl:t.tanggal,ket:'Penjualan '+(t.pelanggan||''),tipe:'masuk',n:Number(t.total||0)});});
+  readAllUser('transaksi',uid).rows.forEach(function(t){if(!t.isDraft&&t.metodePembayaran!=='Piutang') ev.push({tgl:t.tanggal,ket:'Penjualan '+(t.pelanggan||''),tipe:'masuk',n:Number(t.total||0)});});
   readAllUser('pembelian',uid).rows.forEach(function(b){if(b.status==='lunas') ev.push({tgl:b.tanggal,ket:'Pembelian '+(b.produkNama||''),tipe:'keluar',n:Number(b.total||0)});});
   readAllUser('biaya',uid).rows.forEach(function(b){ev.push({tgl:b.tanggal,ket:b.kategori||'Biaya',tipe:b.tipe==='pendapatan'?'masuk':'keluar',n:Number(b.nominal||0)});});
   ev.sort(function(a,b){return new Date(a.tgl)-new Date(b.tgl);});
@@ -524,7 +562,7 @@ function genLapArusKas(uid) {
 
 function genLapPiutang(uid) {
   var sh=getSheet('laporanPiutang'); delUserRows(sh,uid);
-  var list=readAllUser('transaksi',uid).rows.filter(function(t){return t.metodePembayaran==='Piutang';});
+  var list=readAllUser('transaksi',uid).rows.filter(function(t){return !t.isDraft&&t.metodePembayaran==='Piutang';});
   if(!list.length) return;
   var h=getHeaders(sh);
   var rows=list.map(function(t){return h.map(function(k){
@@ -548,7 +586,7 @@ function genLapHutang(uid) {
 
 function genLapOmsetSales(uid) {
   var sh=getSheet('laporanOmsetSales'); delUserRows(sh,uid);
-  var trx=readAllUser('transaksi',uid).rows;
+  var trx=readAllUser('transaksi',uid).rows.filter(function(t){return !t.isDraft;});
   if(!trx.length) return;
   var salesMap={};
   trx.forEach(function(t){
@@ -574,7 +612,7 @@ function genLapOmsetSales(uid) {
 
 function genLapInvoicePelanggan(uid) {
   var sh=getSheet('laporanInvoicePelanggan'); delUserRows(sh,uid);
-  var list=readAllUser('transaksi',uid).rows;
+  var list=readAllUser('transaksi',uid).rows.filter(function(t){return !t.isDraft;});
   if(!list.length) return;
   var h=getHeaders(sh);
   var rows=list.map(function(t){return h.map(function(k){
@@ -601,7 +639,7 @@ function genLapInvoiceSupplier(uid) {
 
 function genLapJatuhTempo(uid) {
   var sh=getSheet('laporanJatuhTempo'); delUserRows(sh,uid);
-  var trx=readAllUser('transaksi',uid).rows.filter(function(t){return t.metodePembayaran==='Piutang'&&!t.lunas&&t.tglJthTempo;});
+  var trx=readAllUser('transaksi',uid).rows.filter(function(t){return !t.isDraft&&t.metodePembayaran==='Piutang'&&!t.lunas&&t.tglJthTempo;});
   var beli=readAllUser('pembelian',uid).rows.filter(function(b){return b.status==='hutang'&&b.tglJthTempo;});
   var h=getHeaders(sh), now=new Date(), rows=[];
   trx.forEach(function(t){
@@ -632,6 +670,30 @@ function getSheet(key) {
 }
 function getHeaders(sh) {
   var c=sh.getLastColumn(); return c===0?[]:sh.getRange(1,1,1,c).getValues()[0];
+}
+function encodeSheetValue_(sheetKey, field, value) {
+  if (value === undefined || value === null) return '';
+  if (JSON_FIELDS[sheetKey] && JSON_FIELDS[sheetKey][field]) return JSON.stringify(value);
+  return value;
+}
+function decodeSheetValue_(sheetKey, field, value) {
+  if (value === '') return null;
+  if (JSON_FIELDS[sheetKey] && JSON_FIELDS[sheetKey][field] && typeof value === 'string') {
+    try { return JSON.parse(value); } catch(e) {}
+  }
+  if (sheetKey==='transaksi' && (field==='isDraft' || field==='lunas')) {
+    return value===true || value==='true';
+  }
+  return value;
+}
+function deleteTransaksiItemsByTransaksiId_(transaksiId, uid) {
+  var sh=getSheet('transaksiItems'), all=sh.getDataRange().getValues(), headers=all[0];
+  var trxCol=headers.indexOf('transaksiId'), uidCol=headers.indexOf('userId');
+  for (var i=all.length-1;i>=1;i--) {
+    if (String(all[i][trxCol])===String(transaksiId) && (uidCol===-1 || String(all[i][uidCol])===String(uid))) {
+      sh.deleteRow(i+1);
+    }
+  }
 }
 function genId() { return 'gs_'+Date.now()+'_'+Math.random().toString(36).slice(2,6); }
 function genToken() { return Utilities.base64Encode(genId()+'_'+Date.now()).replace(/[^a-zA-Z0-9]/g,'').slice(0,64); }

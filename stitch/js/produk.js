@@ -8,19 +8,22 @@ function saveProducts(list) { DB.set('products', list); }
 function getKategori() {
   const saved = DB.get('kategori');
   if (saved.length === 0) {
-    const defaults = ['Makanan', 'Minuman', 'Snack', 'Lainnya'];
+    const defaults = [
+      { id: 'kat_default_makanan', nama: 'Makanan' },
+      { id: 'kat_default_minuman', nama: 'Minuman' },
+      { id: 'kat_default_snack', nama: 'Snack' },
+      { id: 'kat_default_lainnya', nama: 'Lainnya' },
+    ];
     DB.set('kategori', defaults);
     return defaults;
   }
-  // Normalize: convert objects to strings if needed
-  const normalized = saved.map(k => typeof k === 'string' ? k : (k.nama || String(k)));
-  // Save normalized version if it was objects
-  if (saved.some(k => typeof k === 'object')) {
-    DB.set('kategori', normalized);
-  }
-  return normalized;
+  return saved.map(k => typeof k === 'string' ? { id: '', nama: k } : k);
 }
 function saveKategori(list) { DB.set('kategori', list); }
+
+function getKategoriName(item) {
+  return typeof item === 'string' ? item : (item?.nama || '');
+}
 
 // ===== MASTER PRODUK =====
 function renderMasterProduk() {
@@ -136,7 +139,10 @@ function populateKategoriSelect(selectId) {
   const cats = getKategori();
   const current = sel.value;
   sel.innerHTML = '<option value="">Pilih</option>' +
-    cats.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
+    cats.map(c => {
+      const nama = getKategoriName(c);
+      return `<option value="${nama}" ${nama === current ? 'selected' : ''}>${nama}</option>`;
+    }).join('');
 }
 
 function fillTambahProdukForm(p) {
@@ -243,10 +249,10 @@ function tambahKategoriCepat() {
   const nama = prompt('Nama kategori baru:');
   if (!nama?.trim()) return;
   const list = getKategori();
-  if (list.includes(nama.trim())) { showToast('Kategori sudah ada'); return; }
-  list.push(nama.trim());
+  if (list.some(k => getKategoriName(k) === nama.trim())) { showToast('Kategori sudah ada'); return; }
+  list.push({ id: 'kat_' + Date.now(), nama: nama.trim() });
   saveKategori(list);
-  autoSync('kategori', 'create', { id: 'kat_'+Date.now(), nama: nama.trim() });
+  autoSync('kategori', 'create', list[list.length - 1], list[list.length - 1].id);
   populateKategoriSelect('tp-select-kategori');
   document.getElementById('tp-select-kategori').value = nama.trim();
   showToast(`Kategori "${nama.trim()}" ditambahkan`);
@@ -353,7 +359,7 @@ function renderKategoriProduk() {
   }
   container.innerHTML = list.map((k, i) => {
     // Handle both string and object format
-    const nama = typeof k === 'string' ? k : (k.nama || k);
+    const nama = getKategoriName(k);
     return `
     <div class="list-item">
       <span>${nama}</span>
@@ -370,10 +376,10 @@ function tambahKategori() {
   const nama = input.value.trim();
   if (!nama) { showToast('Nama kategori kosong'); return; }
   const list = getKategori();
-  if (list.includes(nama)) { showToast('Kategori sudah ada'); return; }
-  list.push(nama);
+  if (list.some(k => getKategoriName(k) === nama)) { showToast('Kategori sudah ada'); return; }
+  list.push({ id: 'kat_'+Date.now(), nama });
   saveKategori(list);
-  autoSync('kategori', 'create', { id: 'kat_'+Date.now(), nama });
+  autoSync('kategori', 'create', list[list.length - 1], list[list.length - 1].id);
   input.value = '';
   renderKategoriProduk();
   showToast('Kategori ditambahkan');
@@ -382,7 +388,7 @@ function tambahKategori() {
 function hapusKategori(idx) {
   const list = getKategori();
   const item = list[idx];
-  const nama = typeof item === 'string' ? item : (item.nama || item);
+  const nama = getKategoriName(item);
   const id = typeof item === 'object' && item.id ? item.id : ('kat_' + nama);
   
   if (!confirm(`Hapus kategori "${nama}"?`)) return;
@@ -397,14 +403,13 @@ function hapusKategori(idx) {
 function editKategori(idx) {
   const list = getKategori();
   const item = list[idx];
-  const oldNama = typeof item === 'string' ? item : (item.nama || item);
+  const oldNama = getKategoriName(item);
   const id = typeof item === 'object' && item.id ? item.id : ('kat_' + Date.now());
   
   const nama = prompt('Edit kategori:', oldNama);
   if (!nama?.trim()) return;
   
-  // Update list - keep as string for local storage
-  list[idx] = nama.trim();
+  list[idx] = { id, nama: nama.trim() };
   saveKategori(list);
   
   // Sync to GAS with proper object format

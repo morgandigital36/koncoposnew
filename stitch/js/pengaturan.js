@@ -321,9 +321,20 @@ function simpanKontak() {
 // ===================================================
 let _editJenisIdx = null;
 
+function getNamedItemName(item) {
+  return typeof item === 'string' ? item : (item?.nama || '');
+}
+
 function _getJenisList() {
   const saved = DB.get('jenisPenjualan');
-  return saved.length ? saved : ['Reguler', 'Grosir', 'Online'];
+  if (saved.length) return saved.map(item => typeof item === 'string' ? { id: '', nama: item } : item);
+  const defaults = [
+    { id: 'jp_default_reguler', nama: 'Reguler' },
+    { id: 'jp_default_grosir', nama: 'Grosir' },
+    { id: 'jp_default_online', nama: 'Online' },
+  ];
+  DB.set('jenisPenjualan', defaults);
+  return defaults;
 }
 
 function renderJenisPenjualan() {
@@ -340,7 +351,7 @@ function renderJenisPenjualan() {
         <i class="fa-solid fa-list-ul" style="color:var(--primary);"></i>
       </div>
       <div class="crud-item-info">
-        <div class="crud-item-nama">${k}</div>
+        <div class="crud-item-nama">${getNamedItemName(k)}</div>
       </div>
       <div class="crud-item-actions">
         <button class="crud-btn-edit" onclick="bukaFormJenisPenjualan(${i})">
@@ -358,7 +369,7 @@ function bukaFormJenisPenjualan(idx = null) {
   const list  = _getJenisList();
   const title = document.getElementById('form-jenis-title');
   if (title) title.textContent = idx !== null ? 'Edit Jenis Penjualan' : 'Tambah Jenis Penjualan';
-  setVal('form-jenis-nama', idx !== null ? list[idx] : '');
+  setVal('form-jenis-nama', idx !== null ? getNamedItemName(list[idx]) : '');
   const modal = document.getElementById('modal-jenis-penjualan-form');
   if (modal) modal.style.display = 'flex';
 }
@@ -372,9 +383,10 @@ function simpanJenisPenjualan() {
   const nama = document.getElementById('form-jenis-nama')?.value.trim();
   if (!nama) { showToast('Nama tidak boleh kosong'); return; }
   const list = _getJenisList();
-  const id = 'jp_' + (_editJenisIdx !== null ? _editJenisIdx : Date.now());
-  if (_editJenisIdx !== null) list[_editJenisIdx] = nama;
-  else list.push(nama);
+  const current = _editJenisIdx !== null ? list[_editJenisIdx] : null;
+  const id = current?.id || ('jp_' + Date.now());
+  if (_editJenisIdx !== null) list[_editJenisIdx] = { id, nama };
+  else list.push({ id, nama });
   DB.set('jenisPenjualan', list);
   autoSync('jenisPenjualan', 'upsert', { id, nama });
   tutupFormJenisPenjualan();
@@ -384,8 +396,8 @@ function simpanJenisPenjualan() {
 
 function hapusJenisPenjualan(idx) {
   const list = _getJenisList();
-  if (!confirm(`Hapus "${list[idx]}"?`)) return;
-  const id = 'jp_' + idx;
+  if (!confirm(`Hapus "${getNamedItemName(list[idx])}"?`)) return;
+  const id = list[idx]?.id || ('jp_' + idx);
   list.splice(idx, 1);
   DB.set('jenisPenjualan', list);
   autoSync('jenisPenjualan', 'delete', null, id);
@@ -401,17 +413,16 @@ let _editMetodeIdx = null;
 function _getMetodeList() {
   const saved = DB.get('metodePembayaran');
   if (saved.length === 0) {
-    const defaults = ['Tunai', 'Transfer', 'QRIS', 'Piutang'];
+    const defaults = [
+      { id: 'mp_default_tunai', nama: 'Tunai' },
+      { id: 'mp_default_transfer', nama: 'Transfer' },
+      { id: 'mp_default_qris', nama: 'QRIS' },
+      { id: 'mp_default_piutang', nama: 'Piutang' },
+    ];
     DB.set('metodePembayaran', defaults);
     return defaults;
   }
-  // Normalize: convert objects to strings if needed
-  const normalized = saved.map(m => typeof m === 'string' ? m : (m.nama || String(m)));
-  // Save normalized version if it was objects
-  if (saved.some(m => typeof m === 'object')) {
-    DB.set('metodePembayaran', normalized);
-  }
-  return normalized;
+  return saved.map(m => typeof m === 'string' ? { id: '', nama: m } : m);
 }
 
 function renderMetodePembayaran() {
@@ -421,7 +432,7 @@ function renderMetodePembayaran() {
   const icons = { Tunai: 'fa-money-bill-wave', Transfer: 'fa-building-columns', QRIS: 'fa-qrcode', Piutang: 'fa-file-invoice-dollar' };
   container.innerHTML = list.map((k, i) => {
     // Handle both string and object format
-    const nama = typeof k === 'string' ? k : (k.nama || k);
+    const nama = getNamedItemName(k);
     return `
     <div class="crud-item">
       <div class="crud-item-avatar" style="background:#e8f4fd;">
@@ -447,7 +458,7 @@ function bukaFormMetodePembayaran(idx = null) {
   const list  = _getMetodeList();
   const title = document.getElementById('form-metode-title');
   if (title) title.textContent = idx !== null ? 'Edit Metode Pembayaran' : 'Tambah Metode Pembayaran';
-  setVal('form-metode-nama', idx !== null ? list[idx] : '');
+  setVal('form-metode-nama', idx !== null ? getNamedItemName(list[idx]) : '');
   const modal = document.getElementById('modal-metode-form');
   if (modal) modal.style.display = 'flex';
 }
@@ -461,9 +472,10 @@ function simpanMetodePembayaran() {
   const nama = document.getElementById('form-metode-nama')?.value.trim();
   if (!nama) { showToast('Nama tidak boleh kosong'); return; }
   const list = _getMetodeList();
-  const id = 'mp_' + (_editMetodeIdx !== null ? _editMetodeIdx : Date.now());
-  if (_editMetodeIdx !== null) list[_editMetodeIdx] = nama;
-  else list.push(nama);
+  const current = _editMetodeIdx !== null ? list[_editMetodeIdx] : null;
+  const id = current?.id || ('mp_' + Date.now());
+  if (_editMetodeIdx !== null) list[_editMetodeIdx] = { id, nama };
+  else list.push({ id, nama });
   DB.set('metodePembayaran', list);
   autoSync('metodePembayaran', 'upsert', { id, nama });
   tutupFormMetodePembayaran();
@@ -473,8 +485,8 @@ function simpanMetodePembayaran() {
 
 function hapusMetodePembayaran(idx) {
   const list = _getMetodeList();
-  if (!confirm(`Hapus "${list[idx]}"?`)) return;
-  const id = 'mp_' + idx;
+  if (!confirm(`Hapus "${getNamedItemName(list[idx])}"?`)) return;
+  const id = list[idx]?.id || ('mp_' + idx);
   list.splice(idx, 1);
   DB.set('metodePembayaran', list);
   autoSync('metodePembayaran', 'delete', null, id);
@@ -490,11 +502,17 @@ let _editKatBiayaIdx = null;
 function getKategoriBiaya() {
   const saved = DB.get('kategoriBiaya');
   if (saved.length === 0) {
-    const defaults = ['Operasional', 'Gaji', 'Listrik/Air', 'Sewa', 'Lainnya'];
+    const defaults = [
+      { id: 'kb_default_operasional', nama: 'Operasional' },
+      { id: 'kb_default_gaji', nama: 'Gaji' },
+      { id: 'kb_default_listrik_air', nama: 'Listrik/Air' },
+      { id: 'kb_default_sewa', nama: 'Sewa' },
+      { id: 'kb_default_lainnya', nama: 'Lainnya' },
+    ];
     DB.set('kategoriBiaya', defaults);
     return defaults;
   }
-  return saved;
+  return saved.map(item => typeof item === 'string' ? { id: '', nama: item } : item);
 }
 
 function renderKategoriBiaya() {
@@ -507,7 +525,7 @@ function renderKategoriBiaya() {
         <i class="fa-solid fa-receipt" style="color:var(--danger);"></i>
       </div>
       <div class="crud-item-info">
-        <div class="crud-item-nama">${k}</div>
+        <div class="crud-item-nama">${getNamedItemName(k)}</div>
       </div>
       <div class="crud-item-actions">
         <button class="crud-btn-edit" onclick="bukaFormKategoriBiaya(${i})">
@@ -525,7 +543,7 @@ function bukaFormKategoriBiaya(idx = null) {
   const list  = getKategoriBiaya();
   const title = document.getElementById('form-kat-biaya-title');
   if (title) title.textContent = idx !== null ? 'Edit Kategori' : 'Tambah Kategori';
-  setVal('form-kat-biaya-nama', idx !== null ? list[idx] : '');
+  setVal('form-kat-biaya-nama', idx !== null ? getNamedItemName(list[idx]) : '');
   const modal = document.getElementById('modal-kat-biaya-form');
   if (modal) modal.style.display = 'flex';
 }
@@ -539,11 +557,12 @@ function simpanKategoriBiaya() {
   const nama = document.getElementById('form-kat-biaya-nama')?.value.trim();
   if (!nama) { showToast('Nama tidak boleh kosong'); return; }
   const list = getKategoriBiaya();
-  const id = 'kb_' + (_editKatBiayaIdx !== null ? _editKatBiayaIdx : Date.now());
-  if (_editKatBiayaIdx !== null) list[_editKatBiayaIdx] = nama;
+  const current = _editKatBiayaIdx !== null ? list[_editKatBiayaIdx] : null;
+  const id = current?.id || ('kb_' + Date.now());
+  if (_editKatBiayaIdx !== null) list[_editKatBiayaIdx] = { id, nama };
   else {
-    if (list.includes(nama)) { showToast('Kategori sudah ada'); return; }
-    list.push(nama);
+    if (list.some(item => getNamedItemName(item) === nama)) { showToast('Kategori sudah ada'); return; }
+    list.push({ id, nama });
   }
   DB.set('kategoriBiaya', list);
   autoSync('kategoriBiaya', 'upsert', { id, nama });
@@ -554,8 +573,8 @@ function simpanKategoriBiaya() {
 
 function hapusKategoriBiayaItem(idx) {
   const list = getKategoriBiaya();
-  if (!confirm(`Hapus "${list[idx]}"?`)) return;
-  const id = 'kb_' + idx;
+  if (!confirm(`Hapus "${getNamedItemName(list[idx])}"?`)) return;
+  const id = list[idx]?.id || ('kb_' + idx);
   list.splice(idx, 1);
   DB.set('kategoriBiaya', list);
   autoSync('kategoriBiaya', 'delete', null, id);
