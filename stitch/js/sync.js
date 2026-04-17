@@ -23,6 +23,18 @@ function normalizeMasterData(list) {
   return Array.isArray(list) ? list.map(item => typeof item === 'string' ? { id: '', nama: item } : item) : [];
 }
 
+function normalizePulledCollection(localKey, value) {
+  const prefixes = {
+    kategori: 'kat',
+    jenisPenjualan: 'jp',
+    metodePembayaran: 'mp',
+    kategoriBiaya: 'kb',
+  };
+  const prefix = prefixes[localKey];
+  if (!prefix) return Array.isArray(value) ? value : [];
+  return normalizeNamedCollection(value, prefix);
+}
+
 // ============================================================
 // CORE REQUEST — inject token otomatis
 // ============================================================
@@ -177,18 +189,17 @@ async function pushAllToSheet() {
   showSyncToast('Mengirim semua data ke Google Sheet...', 0);
 
   try {
-    // Prepare kategori data: convert strings to objects for GAS
-    const kategoriForGAS = normalizeMasterData(DB.get('kategori')).map((k, idx) => ({
-      id: k.id || ('kat_' + idx + '_' + Date.now()),
-      nama: k.nama || '',
-    }));
+    const kategoriForGAS = getKategori();
+    const jenisPenjualanForGAS = _getJenisList();
+    const metodePembayaranForGAS = _getMetodeList();
+    const kategoriBiayaForGAS = getKategoriBiaya();
     
     const result = await gasRequest({
       body: {
         action: 'pushAll',
         data: {
           produk:          DB.get('products'),      // GAS key: produk
-          kategori:        kategoriForGAS,          // Convert to objects
+          kategori:        kategoriForGAS,
           transaksi:       DB.get('transaksi'),
           pembelian:       DB.get('pembelian'),
           mutasi:          DB.get('mutasi'),
@@ -198,9 +209,9 @@ async function pushAllToSheet() {
           sales:           DB.get('sales'),
           kurir:           DB.get('kurir'),
           kasir:           DB.get('kasir'),
-          jenisPenjualan:  normalizeMasterData(DB.get('jenisPenjualan')).map((k, idx) => ({ id: k.id || ('jp_' + idx), nama: k.nama || '' })),
-          metodePembayaran:normalizeMasterData(DB.get('metodePembayaran')).map((k, idx) => ({ id: k.id || ('mp_' + idx), nama: k.nama || '' })),
-          kategoriBiaya:   normalizeMasterData(DB.get('kategoriBiaya')).map((k, idx) => ({ id: k.id || ('kb_' + idx), nama: k.nama || '' })),
+          jenisPenjualan:  jenisPenjualanForGAS,
+          metodePembayaran:metodePembayaranForGAS,
+          kategoriBiaya:   kategoriBiayaForGAS,
           outlet:          DB.getObj('outlet'),
         }
       }
@@ -257,8 +268,7 @@ async function pullAllFromSheet() {
     };
     Object.entries(map).forEach(([gasKey, localKey]) => {
       if (data[gasKey] !== undefined) {
-        let value = data[gasKey];
-        
+        let value = normalizePulledCollection(localKey, data[gasKey]);
         DB.set(localKey, value);
       }
     });

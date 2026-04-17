@@ -7,17 +7,14 @@ function saveProducts(list) { DB.set('products', list); }
 
 function getKategori() {
   const saved = DB.get('kategori');
-  if (saved.length === 0) {
-    const defaults = [
+  const defaults = [
       { id: 'kat_default_makanan', nama: 'Makanan' },
       { id: 'kat_default_minuman', nama: 'Minuman' },
       { id: 'kat_default_snack', nama: 'Snack' },
       { id: 'kat_default_lainnya', nama: 'Lainnya' },
     ];
-    DB.set('kategori', defaults);
-    return defaults;
-  }
-  return saved.map(k => typeof k === 'string' ? { id: '', nama: k } : k);
+  const source = saved.length ? saved : defaults;
+  return saveNormalizedNamedCollection('kategori', 'kat', source);
 }
 function saveKategori(list) { DB.set('kategori', list); }
 
@@ -376,10 +373,10 @@ function tambahKategori() {
   const nama = input.value.trim();
   if (!nama) { showToast('Nama kategori kosong'); return; }
   const list = getKategori();
-  if (list.some(k => getKategoriName(k) === nama)) { showToast('Kategori sudah ada'); return; }
-  list.push({ id: 'kat_'+Date.now(), nama });
-  saveKategori(list);
-  autoSync('kategori', 'create', list[list.length - 1], list[list.length - 1].id);
+  if (list.some(k => getKategoriName(k).toLowerCase() === nama.toLowerCase())) { showToast('Kategori sudah ada'); return; }
+  const newItem = { id: 'kat_' + normalizeTextKey(nama), nama };
+  saveNormalizedNamedCollection('kategori', 'kat', [...list, newItem]);
+  autoSync('kategori', 'upsert', newItem, newItem.id);
   input.value = '';
   renderKategoriProduk();
   showToast('Kategori ditambahkan');
@@ -404,16 +401,20 @@ function editKategori(idx) {
   const list = getKategori();
   const item = list[idx];
   const oldNama = getKategoriName(item);
-  const id = typeof item === 'object' && item.id ? item.id : ('kat_' + Date.now());
+  const id = typeof item === 'object' && item.id ? item.id : ('kat_' + normalizeTextKey(oldNama));
   
   const nama = prompt('Edit kategori:', oldNama);
   if (!nama?.trim()) return;
+  const namaBaru = nama.trim();
+  if (list.some((entry, entryIdx) => entryIdx !== idx && getKategoriName(entry).toLowerCase() === namaBaru.toLowerCase())) {
+    showToast('Kategori sudah ada');
+    return;
+  }
   
-  list[idx] = { id, nama: nama.trim() };
-  saveKategori(list);
+  list[idx] = { id, nama: namaBaru };
+  saveNormalizedNamedCollection('kategori', 'kat', list);
   
-  // Sync to GAS with proper object format
-  autoSync('kategori', 'upsert', { id, nama: nama.trim() });
+  autoSync('kategori', 'upsert', { id, nama: namaBaru }, id);
   renderKategoriProduk();
   showToast('Kategori diperbarui');
 }

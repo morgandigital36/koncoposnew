@@ -327,14 +327,12 @@ function getNamedItemName(item) {
 
 function _getJenisList() {
   const saved = DB.get('jenisPenjualan');
-  if (saved.length) return saved.map(item => typeof item === 'string' ? { id: '', nama: item } : item);
   const defaults = [
     { id: 'jp_default_reguler', nama: 'Reguler' },
     { id: 'jp_default_grosir', nama: 'Grosir' },
     { id: 'jp_default_online', nama: 'Online' },
   ];
-  DB.set('jenisPenjualan', defaults);
-  return defaults;
+  return saveNormalizedNamedCollection('jenisPenjualan', 'jp', saved.length ? saved : defaults);
 }
 
 function renderJenisPenjualan() {
@@ -384,11 +382,15 @@ function simpanJenisPenjualan() {
   if (!nama) { showToast('Nama tidak boleh kosong'); return; }
   const list = _getJenisList();
   const current = _editJenisIdx !== null ? list[_editJenisIdx] : null;
-  const id = current?.id || ('jp_' + Date.now());
+  if (list.some((item, idx) => idx !== _editJenisIdx && getNamedItemName(item).toLowerCase() === nama.toLowerCase())) {
+    showToast('Jenis penjualan sudah ada');
+    return;
+  }
+  const id = current?.id || ('jp_' + normalizeTextKey(nama));
   if (_editJenisIdx !== null) list[_editJenisIdx] = { id, nama };
   else list.push({ id, nama });
-  DB.set('jenisPenjualan', list);
-  autoSync('jenisPenjualan', 'upsert', { id, nama });
+  saveNormalizedNamedCollection('jenisPenjualan', 'jp', list);
+  autoSync('jenisPenjualan', 'upsert', { id, nama }, id);
   tutupFormJenisPenjualan();
   renderJenisPenjualan();
   showToast(_editJenisIdx !== null ? 'Diperbarui!' : 'Ditambahkan!');
@@ -412,17 +414,13 @@ let _editMetodeIdx = null;
 
 function _getMetodeList() {
   const saved = DB.get('metodePembayaran');
-  if (saved.length === 0) {
-    const defaults = [
-      { id: 'mp_default_tunai', nama: 'Tunai' },
-      { id: 'mp_default_transfer', nama: 'Transfer' },
-      { id: 'mp_default_qris', nama: 'QRIS' },
-      { id: 'mp_default_piutang', nama: 'Piutang' },
-    ];
-    DB.set('metodePembayaran', defaults);
-    return defaults;
-  }
-  return saved.map(m => typeof m === 'string' ? { id: '', nama: m } : m);
+  const defaults = [
+    { id: 'mp_default_tunai', nama: 'Tunai' },
+    { id: 'mp_default_transfer', nama: 'Transfer' },
+    { id: 'mp_default_qris', nama: 'QRIS' },
+    { id: 'mp_default_piutang', nama: 'Piutang' },
+  ];
+  return saveNormalizedNamedCollection('metodePembayaran', 'mp', saved.length ? saved : defaults);
 }
 
 function renderMetodePembayaran() {
@@ -473,11 +471,15 @@ function simpanMetodePembayaran() {
   if (!nama) { showToast('Nama tidak boleh kosong'); return; }
   const list = _getMetodeList();
   const current = _editMetodeIdx !== null ? list[_editMetodeIdx] : null;
-  const id = current?.id || ('mp_' + Date.now());
+  if (list.some((item, idx) => idx !== _editMetodeIdx && getNamedItemName(item).toLowerCase() === nama.toLowerCase())) {
+    showToast('Metode pembayaran sudah ada');
+    return;
+  }
+  const id = current?.id || ('mp_' + normalizeTextKey(nama));
   if (_editMetodeIdx !== null) list[_editMetodeIdx] = { id, nama };
   else list.push({ id, nama });
-  DB.set('metodePembayaran', list);
-  autoSync('metodePembayaran', 'upsert', { id, nama });
+  saveNormalizedNamedCollection('metodePembayaran', 'mp', list);
+  autoSync('metodePembayaran', 'upsert', { id, nama }, id);
   tutupFormMetodePembayaran();
   renderMetodePembayaran();
   showToast(_editMetodeIdx !== null ? 'Diperbarui!' : 'Ditambahkan!');
@@ -501,18 +503,14 @@ let _editKatBiayaIdx = null;
 
 function getKategoriBiaya() {
   const saved = DB.get('kategoriBiaya');
-  if (saved.length === 0) {
-    const defaults = [
-      { id: 'kb_default_operasional', nama: 'Operasional' },
-      { id: 'kb_default_gaji', nama: 'Gaji' },
-      { id: 'kb_default_listrik_air', nama: 'Listrik/Air' },
-      { id: 'kb_default_sewa', nama: 'Sewa' },
-      { id: 'kb_default_lainnya', nama: 'Lainnya' },
-    ];
-    DB.set('kategoriBiaya', defaults);
-    return defaults;
-  }
-  return saved.map(item => typeof item === 'string' ? { id: '', nama: item } : item);
+  const defaults = [
+    { id: 'kb_default_operasional', nama: 'Operasional' },
+    { id: 'kb_default_gaji', nama: 'Gaji' },
+    { id: 'kb_default_listrik_air', nama: 'Listrik/Air' },
+    { id: 'kb_default_sewa', nama: 'Sewa' },
+    { id: 'kb_default_lainnya', nama: 'Lainnya' },
+  ];
+  return saveNormalizedNamedCollection('kategoriBiaya', 'kb', saved.length ? saved : defaults);
 }
 
 function renderKategoriBiaya() {
@@ -558,14 +556,15 @@ function simpanKategoriBiaya() {
   if (!nama) { showToast('Nama tidak boleh kosong'); return; }
   const list = getKategoriBiaya();
   const current = _editKatBiayaIdx !== null ? list[_editKatBiayaIdx] : null;
-  const id = current?.id || ('kb_' + Date.now());
-  if (_editKatBiayaIdx !== null) list[_editKatBiayaIdx] = { id, nama };
-  else {
-    if (list.some(item => getNamedItemName(item) === nama)) { showToast('Kategori sudah ada'); return; }
-    list.push({ id, nama });
+  if (list.some((item, idx) => idx !== _editKatBiayaIdx && getNamedItemName(item).toLowerCase() === nama.toLowerCase())) {
+    showToast('Kategori sudah ada');
+    return;
   }
-  DB.set('kategoriBiaya', list);
-  autoSync('kategoriBiaya', 'upsert', { id, nama });
+  const id = current?.id || ('kb_' + normalizeTextKey(nama));
+  if (_editKatBiayaIdx !== null) list[_editKatBiayaIdx] = { id, nama };
+  else list.push({ id, nama });
+  saveNormalizedNamedCollection('kategoriBiaya', 'kb', list);
+  autoSync('kategoriBiaya', 'upsert', { id, nama }, id);
   tutupFormKategoriBiaya();
   renderKategoriBiaya();
   showToast(_editKatBiayaIdx !== null ? 'Diperbarui!' : 'Ditambahkan!');
@@ -580,6 +579,42 @@ function hapusKategoriBiayaItem(idx) {
   autoSync('kategoriBiaya', 'delete', null, id);
   renderKategoriBiaya();
   showToast('Dihapus');
+}
+
+// ===== POS SETTINGS =====
+const DEFAULT_POS_SETTINGS = {
+  mode: 'Tampil Semua',
+  jenis: 'List',
+  stok: 'Auto',
+  kategori: 'Kesamping',
+  urutan: 'Abjad',
+};
+
+function getPosSettings() {
+  const saved = DB.getObj('posSettings');
+  return { ...DEFAULT_POS_SETTINGS, ...saved };
+}
+
+function initPosSettings() {
+  const cfg = getPosSettings();
+  setVal('ps-mode', cfg.mode);
+  setVal('ps-jenis', cfg.jenis);
+  setVal('ps-stok', cfg.stok);
+  setVal('ps-kategori', cfg.kategori);
+  setVal('ps-urutan', cfg.urutan);
+}
+
+function simpanPosSettings() {
+  const data = {
+    mode: document.getElementById('ps-mode')?.value || DEFAULT_POS_SETTINGS.mode,
+    jenis: document.getElementById('ps-jenis')?.value || DEFAULT_POS_SETTINGS.jenis,
+    stok: document.getElementById('ps-stok')?.value || DEFAULT_POS_SETTINGS.stok,
+    kategori: document.getElementById('ps-kategori')?.value || DEFAULT_POS_SETTINGS.kategori,
+    urutan: document.getElementById('ps-urutan')?.value || DEFAULT_POS_SETTINGS.urutan,
+  };
+  DB.setObj('posSettings', data);
+  showToast('Pengaturan POS disimpan!');
+  switchScreen('pos');
 }
 
 // ===== HAPUS DATA =====
@@ -604,5 +639,6 @@ document.addEventListener('screenInit', (e) => {
   if (name === 'kasir')               renderKontakList('kasir');
   if (name === 'jenis-penjualan')     renderJenisPenjualan();
   if (name === 'metode-pembayaran')   renderMetodePembayaran();
+  if (name === 'pos-settings')        initPosSettings();
   if (name === 'pengaturan-printer')  initPengaturanPrinter();
 });

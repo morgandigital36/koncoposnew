@@ -8,9 +8,52 @@ let selectedPayMethod = 'Tunai';
 let _lastTrx = null;
 let posViewMode = 'list'; // 'list' or 'grid'
 
+function getActivePosSettings() {
+  return typeof getPosSettings === 'function'
+    ? getPosSettings()
+    : { mode: 'Tampil Semua', jenis: 'List', stok: 'Auto', kategori: 'Kesamping', urutan: 'Abjad' };
+}
+
+function applyPosSettings() {
+  const cfg = getActivePosSettings();
+  posViewMode = (cfg.jenis || 'List').toLowerCase() === 'grid' ? 'grid' : 'list';
+  const icon = document.getElementById('pos-view-icon');
+  if (icon) {
+    icon.className = posViewMode === 'list' ? 'fa-solid fa-th' : 'fa-solid fa-list';
+  }
+  renderPosCategoryBar();
+}
+
+function renderPosCategoryBar() {
+  const bar = document.querySelector('#screen-pos .pos-category-bar');
+  if (!bar) return;
+
+  const cfg = getActivePosSettings();
+  if (cfg.kategori === 'Sembunyikan') {
+    bar.style.display = 'none';
+    return;
+  }
+
+  const categories = getKategori().map(item => getKategoriName(item));
+  bar.style.display = 'flex';
+  bar.style.flexDirection = cfg.kategori === 'Kebawah' ? 'column' : 'row';
+  bar.style.alignItems = cfg.kategori === 'Kebawah' ? 'stretch' : 'center';
+
+  bar.innerHTML = `
+    <button class="pos-cat-btn ${posActiveCat === 'semua' ? 'active' : ''}" onclick="filterCategory(this, 'semua')">Semua</button>
+    ${categories.map((nama) => `
+      <button class="pos-cat-btn ${posActiveCat.toLowerCase() === nama.toLowerCase() ? 'active' : ''}" onclick="filterCategory(this, '${nama.replace(/'/g, "\\'")}')">${nama}</button>
+    `).join('')}
+    <div class="pos-view-toggle" onclick="togglePosView()">
+      <i class="${posViewMode === 'list' ? 'fa-solid fa-th' : 'fa-solid fa-list'}" id="pos-view-icon"></i>
+    </div>`;
+}
+
 // ===== PRODUK LIST =====
 function togglePosView() {
   posViewMode = posViewMode === 'list' ? 'grid' : 'list';
+  const cfg = getActivePosSettings();
+  DB.setObj('posSettings', { ...cfg, jenis: posViewMode === 'grid' ? 'Grid' : 'List' });
   const icon = document.getElementById('pos-view-icon');
   if (icon) {
     icon.className = posViewMode === 'list' ? 'fa-solid fa-th' : 'fa-solid fa-list';
@@ -21,7 +64,13 @@ function togglePosView() {
 function renderPosProducts(query = '') {
   const area = document.getElementById('posProductArea');
   if (!area) return;
+  const cfg = getActivePosSettings();
   let filtered = getProducts();
+  if (cfg.mode === 'Stok Ada') {
+    filtered = filtered.filter(p => Number(p.stok ?? p.stokAwal ?? 0) > 0);
+  } else if (cfg.mode === 'Favorit') {
+    filtered = filtered.filter(p => p.favorite === true);
+  }
   if (posActiveCat !== 'semua') {
     filtered = filtered.filter(p => (p.kategori || '').toLowerCase() === posActiveCat.toLowerCase());
   }
@@ -31,6 +80,13 @@ function renderPosProducts(query = '') {
       p.nama.toLowerCase().includes(q) ||
       (p.barcode || '').includes(q) ||
       (p.kode || '').toLowerCase().includes(q));
+  }
+  if (cfg.urutan === 'Abjad') {
+    filtered.sort((a, b) => String(a.nama || '').localeCompare(String(b.nama || ''), 'id'));
+  } else if (cfg.urutan === 'Terbaru') {
+    filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  } else if (cfg.urutan === 'Terlama') {
+    filtered.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   }
   if (filtered.length === 0) {
     area.innerHTML = emptyState('fa-cube', 'Data tidak ditemukan',
@@ -45,7 +101,7 @@ function renderPosProducts(query = '') {
           ${p.foto ? `<img src="${p.foto}" alt="${p.nama}" />` : `<i class="fa-solid fa-cube"></i>`}
         </div>
         <div class="pos-card-nama">${p.nama}</div>
-        <div class="pos-card-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>
+        ${(cfg.stok === 'Sembunyikan') ? '' : `<div class="pos-card-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>`}
         <div class="pos-card-harga">${fmt(p.hargaJual)}</div>
       </div>`).join('')}</div>`;
   } else {
@@ -56,7 +112,7 @@ function renderPosProducts(query = '') {
         </div>
         <div class="pos-product-info">
           <div class="pos-product-nama">${p.nama}</div>
-          <div class="pos-product-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>
+          ${(cfg.stok === 'Sembunyikan') ? '' : `<div class="pos-product-stok">Stok: ${p.stok ?? p.stokAwal ?? 0}</div>`}
         </div>
         <div class="pos-product-harga">${fmt(p.hargaJual)}</div>
       </div>`).join('');
@@ -803,7 +859,7 @@ function shareWhatsapp() {
 // ===== SCREEN INIT LISTENER =====
 document.addEventListener('screenInit', (e) => {
   const { name } = e.detail;
-  if (name === 'pos') { renderPosProducts(); updateCartBar(); }
+  if (name === 'pos') { applyPosSettings(); renderPosProducts(); updateCartBar(); }
   if (name === 'keranjang') { resetCartForm(); renderCartScreen(); }
   if (name === 'checkout') initCheckout();
   if (name === 'log-transaksi') { initLogTransaksi(); renderLogTransaksi(); }

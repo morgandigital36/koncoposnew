@@ -62,6 +62,13 @@ var JSON_FIELDS = {
   transaksi: { items:true }
 };
 
+var NAMED_MASTER_CONFIG = {
+  kategori: { prefix:'kat' },
+  metodePembayaran: { prefix:'mp' },
+  jenisPenjualan: { prefix:'jp' },
+  kategoriBiaya: { prefix:'kb' }
+};
+
 
 // ===== ENTRY POINTS =====
 function doGet(e) {
@@ -149,6 +156,57 @@ function ensureSheetSchema_(sh, expectedHeaders) {
       existingHeaders.splice(i, 0, expectedHeaders[i]);
     }
   }
+}
+
+function getNamedMasterConfig_(sheetKey) {
+  return NAMED_MASTER_CONFIG[sheetKey] || null;
+}
+
+function normalizeName_(value) {
+  return trim(value || '').toLowerCase();
+}
+
+function slugifyName_(value) {
+  return normalizeName_(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'item';
+}
+
+function prepareNamedMasterData_(sheetKey, data) {
+  var cfg = getNamedMasterConfig_(sheetKey);
+  if (!cfg || !data) return data;
+  data.nama = trim(data.nama || '');
+  if (!data.id && data.nama) data.id = cfg.prefix + '_' + slugifyName_(data.nama);
+  return data;
+}
+
+function findExistingNamedMasterRow_(sheetKey, nama, uid) {
+  var cfg = getNamedMasterConfig_(sheetKey);
+  if (!cfg || !nama) return null;
+  var sh = getSheet(sheetKey), all = sh.getDataRange().getValues(), headers = all[0];
+  var idCol = headers.indexOf('id'), uidCol = headers.indexOf('userId'), namaCol = headers.indexOf('nama');
+  var targetName = normalizeName_(nama);
+  if (namaCol === -1) return null;
+  for (var i = 1; i < all.length; i++) {
+    if (uidCol !== -1 && uid && String(all[i][uidCol]) !== String(uid)) continue;
+    if (normalizeName_(all[i][namaCol]) === targetName) {
+      return { rowIdx:i, id:all[i][idCol] };
+    }
+  }
+  return null;
+}
+
+function dedupeNamedMasterRows_(sheetKey, rows) {
+  var cfg = getNamedMasterConfig_(sheetKey);
+  if (!cfg || !rows || !rows.length) return rows || [];
+  var seen = {}, result = [];
+  rows.forEach(function(row){
+    row = prepareNamedMasterData_(sheetKey, row || {});
+    var namaKey = normalizeName_(row.nama);
+    if (!namaKey) return;
+    if (seen[namaKey]) return;
+    seen[namaKey] = true;
+    result.push(row);
+  });
+  return result;
 }
 
 
@@ -306,6 +364,12 @@ function readOne(sheetKey,id,uid) {
 
 function createRow(sheetKey,data,uid) {
   var sh=getSheet(sheetKey), headers=getHeaders(sh), now=new Date().toISOString();
+  data = prepareNamedMasterData_(sheetKey, data || {});
+  var existingByName = findExistingNamedMasterRow_(sheetKey, data.nama, uid);
+  if (existingByName) {
+    data.id = existingByName.id;
+    return updateRow(sheetKey, existingByName.id, data, uid);
+  }
   if (!data.id) data.id=genId();
   if (!data.createdAt) data.createdAt=now;
   if (headers.indexOf('updatedAt')!==-1) data.updatedAt=now;
@@ -349,16 +413,32 @@ function deleteRow(sheetKey,id,uid) {
 }
 
 function upsertRow(sheetKey,data,uid) {
+  data = prepareNamedMasterData_(sheetKey, data || {});
   if (sheetKey==='outlet') {
     data.id = data.id || ('outlet_' + String(data.key || 'unknown'));
   }
-  if (!data.id) return createRow(sheetKey,data,uid);
+  if (!data.id) {
+    var existingNamed = findExistingNamedMasterRow_(sheetKey, data.nama, uid);
+    if (existingNamed) {
+      data.id = existingNamed.id;
+      return updateRow(sheetKey, existingNamed.id, data, uid);
+    }
+    return createRow(sheetKey,data,uid);
+  }
   var ex=readOne(sheetKey,data.id,uid);
+  if (!ex.row) {
+    var existingByName = findExistingNamedMasterRow_(sheetKey, data.nama, uid);
+    if (existingByName) {
+      data.id = existingByName.id;
+      return updateRow(sheetKey, existingByName.id, data, uid);
+    }
+  }
   return ex.row ? updateRow(sheetKey,data.id,data,uid) : createRow(sheetKey,data,uid);
 }
 
 function bulkSyncUser(sheetKey,rows,uid) {
   var sh=getSheet(sheetKey), headers=getHeaders(sh), uidCol=headers.indexOf('userId');
+  rows = dedupeNamedMasterRows_(sheetKey, rows || []);
   var all=sh.getDataRange().getValues();
   for (var i=all.length-1;i>=1;i--) {
     if (uidCol!==-1&&String(all[i][uidCol])===String(uid)) sh.deleteRow(i+1);
@@ -366,6 +446,7 @@ function bulkSyncUser(sheetKey,rows,uid) {
   if (!rows||!rows.length) return {status:'ok',count:0};
   var now=new Date().toISOString();
   var newRows=rows.map(function(d){
+    d = prepareNamedMasterData_(sheetKey, d || {});
     if (!d.id) d.id=genId();
     if (!d.createdAt) d.createdAt=now;
     if (uidCol!==-1) d.userId=uid;

@@ -150,6 +150,45 @@ function emptyState(icon, title, sub = '') {
   </div>`;
 }
 
+function normalizeTextKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'item';
+}
+
+function normalizeNamedCollection(list, prefix) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const normalized = [];
+
+  list.forEach((item) => {
+    const rawNama = typeof item === 'string' ? item : (item?.nama || '');
+    const nama = String(rawNama || '').trim();
+    if (!nama) return;
+
+    const dedupeKey = nama.toLowerCase();
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+
+    const next = (item && typeof item === 'object')
+      ? { ...item, nama }
+      : { nama };
+
+    next.id = String(next.id || '').trim() || `${prefix}_${normalizeTextKey(nama)}`;
+    normalized.push(next);
+  });
+
+  return normalized;
+}
+
+function saveNormalizedNamedCollection(storageKey, prefix, list) {
+  const normalized = normalizeNamedCollection(list, prefix);
+  DB.set(storageKey, normalized);
+  return normalized;
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   updateClock();

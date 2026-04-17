@@ -206,7 +206,15 @@ function _applyPulledData(data) {
     kategoriBiaya:   'kategoriBiaya',
   };
   Object.entries(map).forEach(([gasKey, localKey]) => {
-    if (data[gasKey] !== undefined) DB.set(localKey, data[gasKey]);
+    if (data[gasKey] === undefined) return;
+    const prefixes = {
+      kategori: 'kat',
+      jenisPenjualan: 'jp',
+      metodePembayaran: 'mp',
+      kategoriBiaya: 'kb',
+    };
+    const prefix = prefixes[localKey];
+    DB.set(localKey, prefix ? normalizeNamedCollection(data[gasKey], prefix) : data[gasKey]);
   });
   if (data.outlet) DB.setObj('outlet', data.outlet);
 }
